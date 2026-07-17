@@ -1,44 +1,118 @@
-<!-- Copyright (C) Microsoft Corporation. All rights reserved.
- Use of this source code is governed by a BSD-style license that can be
- found in the LICENSE file. -->
-
 <!DOCTYPE html>
-<!-- saved from url=edge://surf/ -->
-<html dir="ltr" lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="apple-touch-icon" sizes="57x57" href="resources/icons/apple-icon-57x57.png">
-    <link rel="apple-touch-icon" sizes="60x60" href="resources/icons/apple-icon-60x60.png">
-    <link rel="apple-touch-icon" sizes="72x72" href="resources/icons/apple-icon-72x72.png">
-    <link rel="apple-touch-icon" sizes="76x76" href="resources/icons/apple-icon-76x76.png">
-    <link rel="apple-touch-icon" sizes="114x114" href="resources/icons/apple-icon-114x114.png">
-    <link rel="apple-touch-icon" sizes="120x120" href="resources/icons/apple-icon-120x120.png">
-    <link rel="apple-touch-icon" sizes="144x144" href="resources/icons/apple-icon-144x144.png">
-    <link rel="apple-touch-icon" sizes="152x152" href="resources/icons/apple-icon-152x152.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="resources/icons/apple-icon-180x180.png">
-    <link rel="icon" type="image/png" sizes="192x192"  href="resources/icons/android-icon-192x192.png">
-    <link rel="icon" type="image/svg+xml" href="resources/icons/favicon.svg">
-    <link rel="manifest" href="manifest.json">
-    <meta name="msapplication-TileColor" content="#ffffff">
-    <meta name="msapplication-TileImage" content="resources/icons/ms-icon-144x144.png">
-    <meta name="theme-color" content="#ffffff">
-    <script src="resources/js/base-error-reporting.js"></script>
-    <script src="resources/js/surf-error-reporting.js"></script>
-    <script src="resources/js/assert.js"></script>
-    <script src="resources/js/promise_resolver.js"></script>
-    <script src="resources/js/cr.js"></script>
-    <script src="resources/js/parse_html_subset.js"></script>
-    <script src="resources/js/load_time_data.js"></script>
-    <script src="resources/js/util.js"></script>
-    <script src="resources/js/strings.js"></script>
-    <link href="resources/css/interface.css" rel="stylesheet" media="all"/>
-  </head>
-    <body>
-        <div id="hamburger-container"></div>
-        <div id="modal-root"></div>
-        <script defer="defer" src="resources/js/lib_react.chunk.js"></script>
-        <script defer="defer" src="resources/js/lib_common.chunk.js"></script>
-        <script defer="defer" src="resources/js/surf.bundle.js"></script>
-    </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HelloCamp 2026 — Escape from the Island</title>
+  <link rel="icon" type="image/svg+xml" href="resources/icons/favicon.svg">
+  <link rel="stylesheet" href="resources/css/camp.css">
+</head>
+<body>
+
+  <!-- ============================ Screen 1: island ======================== -->
+  <div id="screen-island" class="screen ocean-bg">
+    <div id="island-stage"></div>
+    <div id="island-actions">
+      <button id="admin-open" class="gear-btn" title="Camp crew settings">⚙️</button>
+      <button id="lang-toggle" class="gear-btn" title="Language">CZ</button>
+      <button id="intro-open" class="gear-btn" title="Intro">🎬</button>
+      <button id="podium-open" class="gear-btn end-night-btn">🏁 End the night</button>
+    </div>
+  </div>
+
+  <!-- ============================ Podium (end of night) =================== -->
+  <div id="screen-podium" class="screen ocean-bg">
+    <div id="podium-title"></div>
+    <div id="podium-stage"></div>
+    <button id="podium-back" class="back-btn">← Back to the island</button>
+  </div>
+
+  <!-- ============================ Intro cinematic ========================= -->
+  <div id="intro-overlay">
+    <video id="intro-video" src="resources/camp/intro.mp4" preload="metadata" playsinline></video>
+    <button id="intro-skip" class="back-btn">Skip ▶▶</button>
+  </div>
+
+  <!-- ============================ Screen 2: shop ========================== -->
+  <div id="screen-shop" class="screen ocean-bg">
+    <header class="shop-header">
+      <button id="shop-back" class="back-btn">← Island</button>
+      <span id="shop-team-badge"></span>
+      <span class="shop-title" id="shop-title">Shipyard</span>
+      <span class="spacer"></span>
+      <span id="shop-shells-wrap">🐚 <span id="shop-shells">0</span></span>
+    </header>
+    <div class="shop-body">
+      <div id="shop-categories"></div>
+      <aside class="shop-side">
+        <div class="shop-preview">
+          <div id="shop-preview-boat"></div>
+          <div id="shop-preview-parts"></div>
+        </div>
+        <button id="shop-play" class="play-btn">▶ PLAY</button>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ============================ Screen 3: game ========================== -->
+  <div id="screen-game" class="screen">
+    <div id="game-wrap">
+      <div id="game-frame">
+        <canvas id="game-canvas" width="540" height="760"></canvas>
+
+        <div id="hud-bars" class="hud">
+          <div>
+            <div class="hud-bar-label" id="hud-fuel-label">FUEL</div>
+            <div class="hud-bar"><div id="hud-fuel-fill" class="hud-bar-fill"></div></div>
+          </div>
+          <div id="hud-wind" style="visibility:hidden">
+            <div class="hud-bar-label" id="hud-wind-label">WIND</div>
+            <div class="hud-bar"><div id="hud-wind-fill" class="hud-bar-fill"></div></div>
+          </div>
+          <div id="hud-armor"></div>
+        </div>
+
+        <div id="hud-tag-wrap" class="hud"><span id="game-team-tag"></span></div>
+        <div id="hud-distance-wrap" class="hud"><span id="hud-distance">0 m</span></div>
+        <div id="hud-ready" class="hud">Press ◀ or ▶ to set sail</div>
+        <div id="hud-countdown" class="hud" style="display:none"></div>
+
+        <div id="game-overlay">
+          <div class="over-panel">
+            <div id="over-title">CRASHED!</div>
+            <div class="over-stat"><span class="lbl" id="over-run-label">This run</span><span class="val" id="over-run">0 m</span></div>
+            <div class="over-stat"><span class="lbl" id="over-best-label">Best tonight</span><span class="val" id="over-best">0 m</span></div>
+            <div class="over-buttons">
+              <button id="over-repeat" class="over-btn">↺ REPEAT</button>
+              <button id="over-continue" class="over-btn">CONTINUE ➜</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ Admin modal ============================= -->
+  <div id="admin-modal">
+    <div class="admin-panel">
+      <h2 id="admin-title">Camp crew settings</h2>
+      <div class="admin-cols" id="admin-cols">Color · Team name · 🐚 Shells · 🌊 Distance (m)</div>
+      <div id="admin-rows"></div>
+      <div class="admin-buttons">
+        <button id="admin-reset" class="admin-btn">Reset everything</button>
+        <span class="spacer"></span>
+        <button id="admin-cancel" class="admin-btn">Cancel</button>
+        <button id="admin-save" class="admin-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="resources/js/camp/data.js"></script>
+  <script src="resources/js/camp/state.js"></script>
+  <script src="resources/js/camp/sprites.js"></script>
+  <script src="resources/js/camp/pixelart.js"></script>
+  <script src="resources/js/camp/screens.js"></script>
+  <script src="resources/js/camp/game.js"></script>
+  <script src="resources/js/camp/main.js"></script>
+</body>
 </html>

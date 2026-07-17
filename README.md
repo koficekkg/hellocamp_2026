@@ -1,3 +1,32 @@
+# HelloCamp 2026 — Escape from the Island
+
+A summer-camp game built on top of the *Let's Surf* clone below. Four camp teams
+land on a mysterious island; each night one member per team sails away as far as
+they can. Shells earned in real-life camp games buy better gear in the shipyard.
+
+**Play:** open `index.html` (any static server or GitHub Pages). The original surf
+game is still available at `surf-original.html`.
+
+- **Screen 1 — Island:** the magical island with all four team ships around it.
+  Ships drift further from the island the more metres their team has sailed, with
+  the total shown next to each ship. Cards show shells, current boat and distance.
+  Click a team's ship or card to enter its shipyard. The ⚙️ button (right edge)
+  opens crew settings: team names, colors, shell balances, distances, full reset.
+- **Screen 2 — Shipyard:** three categories × three tiers (motors → fuel time,
+  sails → wind-boost strength, boats → base speed). Buying subtracts shells and
+  equips the item; owned items can be re-equipped by clicking (green border =
+  equipped). The preview shows the boat with everything mounted. PLAY starts the run.
+- **Screen 3 — The run:** steer with ◀ ▶ / A D. Fuel (top left) drains constantly;
+  collecting a wind charge fills the wind bar for a temporary speed boost that
+  decays. When fuel is gone you coast on wind alone until it runs out — or you
+  crash. REPEAT plays again, CONTINUE banks the best run of the night onto the
+  team's total distance.
+
+Team progress is stored in the browser's `localStorage` (key `hellocamp2026-state-v1`),
+so use the same browser profile all week.
+
+---
+
 # Microsoft Edge's *Let's Surf*
 The *Let's Surf* game from ``edge://surf``
 
