@@ -6,12 +6,15 @@ window.Camp = window.Camp || {};
   sheet.src = 'resources/surf/objects.png';
   var water = new Image();
   water.src = 'resources/surf/bg.png';
+  var islandArt = new Image();
+  islandArt.src = 'resources/camp/island.png'; // key art shared with the island screen
 
   Camp.sheet = sheet;
   Camp.waterTile = water;
+  Camp.islandArt = islandArt;
 
   Camp.onSpritesReady = function (cb) {
-    var left = 2;
+    var left = 3;
     function done() { if (--left === 0) cb(); }
     function hook(img) {
       // a failed load also has complete === true — it must still count as
@@ -19,7 +22,7 @@ window.Camp = window.Camp || {};
       if (img.complete) done();
       else { img.onload = done; img.onerror = done; }
     }
-    hook(sheet); hook(water);
+    hook(sheet); hook(water); hook(islandArt);
   };
 
   /* [sx, sy, sw, sh] source rects on objects.png.
@@ -51,13 +54,8 @@ window.Camp = window.Camp || {};
     tentacles2:{ r: [1284, 268, 116, 118], hb: [0.15, 0.20, 0.70, 0.65] },
     tentacles3:{ r: [1412, 268, 116, 118], hb: [0.15, 0.20, 0.70, 0.65] },
     // pickups
-    bolt:      { r: [1026, 2, 60, 60] },
     boltSmall: { r: [1032, 200, 52, 52] },
-    // movers
-    jetski1a:  { r: [1152, 128, 64, 64], hb: [0.2, 0.2, 0.6, 0.6] },
-    jetski1b:  { r: [1216, 128, 64, 64], hb: [0.2, 0.2, 0.6, 0.6] },
-    jetski2a:  { r: [1152, 192, 64, 64], hb: [0.2, 0.2, 0.6, 0.6] },
-    jetski2b:  { r: [1216, 192, 64, 64], hb: [0.2, 0.2, 0.6, 0.6] },
+    // ambient
     dolphin1:  { r: [1344, 64, 56, 64] },
     dolphin2:  { r: [1344, 128, 56, 64] },
     dolphin3:  { r: [1344, 192, 56, 64] },
@@ -87,9 +85,6 @@ window.Camp = window.Camp || {};
     { s: 'islet1',    w: 5,  scale: 1.7 },
     { s: 'isletPalm', w: 5,  scale: 1.7 },
     { s: 'islet2',    w: 5,  scale: 1.7 },
-    { s: 'tentacles1',w: 4,  scale: 1.5 },
-    { s: 'tentacles2',w: 4,  scale: 1.5 },
-    { s: 'tentacles3',w: 4,  scale: 1.5 },
     { s: 'islandA',   w: 3,  scale: 1.4 },
     { s: 'islandB',   w: 3,  scale: 1.4 },
     { s: 'islandC',   w: 3,  scale: 1.4 },

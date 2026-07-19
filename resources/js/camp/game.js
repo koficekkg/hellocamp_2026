@@ -41,15 +41,17 @@ window.Camp = window.Camp || {};
       nextWaveAt: 780,       // world y of the first obstacle wave (start stretch is clear)
       laneX: W / 2 - 75,     // left edge of the guaranteed-safe corridor
       laneLog: [],           // {y, x, w} corridor history, oldest first
+      pattern: 'scatter',    // current terrain pattern (see rollPattern)
+      patternUntil: 0,       // world y where the next pattern is rolled
+      slalomSide: 1,         // which shore the slalom corridor is swinging toward
       nextWindAt: 1.5 + Math.random() * 2,
+      nextTentacleAt: 1000 + Math.random() * 400, // world y of the first kraken tentacle
       clock: 0,
       endReason: null,       // 'crash' | 'kraken'
       bobT: Math.random() * 10,
-      kraken: null,          // {dist, t} once the fuel is gone
+      kraken: null,          // {dist, t, x, mode} — fuel gone, or a tentacle was touched
       catchT: 0,             // kraken catch animation clock
-      movers: [],            // crossing jet-skis (lethal)
       dolphins: [],          // leaping dolphins (ambient, harmless)
-      nextMoverAt: 14 + Math.random() * 6,
       nextDolphinAt: 4 + Math.random() * 4,
       armor: stats.armor,    // hull plating charges left this run
       graceT: 0,             // invulnerability after plating absorbs a hit
@@ -58,12 +60,92 @@ window.Camp = window.Camp || {};
   }
 
   // ---- spawning -----------------------------------------------------------
-  function pickObstacle() {
-    var pool = Camp.OBSTACLE_POOL, total = 0, i;
-    for (i = 0; i < pool.length; i++) total += pool[i].w;
+  function pickObstacle(maxH) {
+    var pool = Camp.OBSTACLE_POOL, total = 0, i, ok = [];
+    for (i = 0; i < pool.length; i++) {
+      var d = pool[i];
+      if (maxH && Camp.SPRITES[d.s].r[3] * d.scale > maxH) continue;
+      ok.push(d);
+      total += d.w;
+    }
     var r = Math.random() * total;
-    for (i = 0; i < pool.length; i++) { r -= pool[i].w; if (r <= 0) return pool[i]; }
-    return pool[0];
+    for (i = 0; i < ok.length; i++) { r -= ok[i].w; if (r <= 0) return ok[i]; }
+    return ok[0];
+  }
+
+  /* Try to add one obstacle at (x, y) belonging to the wave line at waveY.
+   * Size gets a ±20% jitter and a random mirror so repeated sprites don't
+   * read as copy-paste. Rejects anything that overlaps recent spawns (pad px
+   * apart, negative = may touch) or, when laneW is given, anything inside the
+   * corridor's drift cone — the lane shifts up to `slope` px sideways per px
+   * of descent, so the margin must cover the sprite's whole height PLUS its
+   * offset from the wave line the lane was sampled at. Returns obstacle/null. */
+  function placeObstacle(def, x, y, waveY, pad, laneW, slope) {
+    var jit = 0.8 + Math.random() * 0.45;
+    var sp = Camp.SPRITES[def.s];
+    var w = sp.r[2] * def.scale * jit, h = sp.r[3] * def.scale * jit;
+    x = Math.max(-w * 0.3, Math.min(W - w * 0.7, x));
+    if (laneW != null) {
+      var margin = 22 + (slope || 0.4) * (h + Math.abs(y - waveY));
+      if (x + w >= run.laneX - margin && x <= run.laneX + laneW + margin) return null;
+    }
+    if (pad == null) pad = 8;
+    for (var k = Math.max(0, run.obstacles.length - 24); k < run.obstacles.length; k++) {
+      var o = run.obstacles[k];
+      if (x < o.x + o.w + pad && x + w > o.x - pad && y < o.y + o.h + pad && y + h > o.y - pad)
+        return null;
+    }
+    var ob = { s: def.s, x: x, y: y, w: w, h: h,
+               hb: sp.hb || [0.1, 0.1, 0.8, 0.8], flip: Math.random() < 0.5 };
+    run.obstacles.push(ob);
+    return ob;
+  }
+
+  /* One randomly-placed obstacle that respects the corridor. */
+  function scatterOne(waveY, laneW, tries, slope) {
+    for (var n = 0; n < tries; n++) {
+      var def = pickObstacle();
+      if (placeObstacle(def, Math.random() * (W - 60), waveY + (Math.random() - 0.5) * 40,
+                        waveY, 8, laneW, slope)) return true;
+    }
+    return false;
+  }
+
+  /* Move the guaranteed-safe corridor. The per-wave shift always stays under
+   * the boat's lateral reach between two waves (~0.85 * gap), so the corridor
+   * COMPOSES across waves and is always steerable. */
+  function driftLane(gap, laneW, target, aggressive) {
+    var maxShift = gap * (aggressive ? 0.6 : 0.4);
+    var want = target == null
+      ? run.laneX + (Math.random() * 2 - 1) * maxShift
+      : run.laneX + Math.max(-maxShift, Math.min(maxShift, target - run.laneX));
+    run.laneX = Math.max(30, Math.min(W - 30 - laneW, want));
+  }
+
+  /* The sea comes in stretches, like the original surf game: calm open water,
+   * loose scatter, winding slalom canyons, archipelago clusters, and wall
+   * lines with a single gap to find. */
+  function rollPattern(waveY, ramp) {
+    var r = Math.random(), pick;
+    if (r < 0.13) pick = 'calm';
+    else if (r < 0.38) pick = 'scatter';
+    else if (r < 0.60) pick = 'slalom';
+    else if (r < 0.80) pick = 'cluster';
+    else pick = 'wall';
+    if (pick === run.pattern && pick !== 'scatter') pick = 'scatter'; // no set piece twice in a row
+    run.pattern = pick;
+    var len = pick === 'calm' ? 300 + Math.random() * 250 :
+              pick === 'scatter' ? 550 + Math.random() * 450 :
+              pick === 'slalom' ? (850 + Math.random() * 650) * (0.8 + 0.4 * ramp) :
+              pick === 'cluster' ? 650 + Math.random() * 450 :
+              1; // wall is a single line; roll again next wave
+    run.patternUntil = waveY + len;
+    if (pick === 'slalom') {
+      run.slalomSide = run.laneX + 75 < W / 2 ? 1 : -1;
+      // obstacles already spawned assumed the gentler 0.4 drift cone — ease
+      // into the aggressive swing so their height window stays honored
+      run.slalomEase = 2;
+    }
   }
 
   function spawnWave() {
@@ -72,51 +154,83 @@ window.Camp = window.Camp || {};
     var ramp = Math.min(1, meters / t.rampMeters);
     var gap = t.obstacleGapPx - (t.obstacleGapPx - t.minObstacleGapPx) * ramp;
     var waveY = run.nextWaveAt; // world y of this wave line
-
-    // one guaranteed passable corridor that COMPOSES across waves: the lane
-    // drifts as a bounded random walk, never further per wave than the boat
-    // can steer between two waves (lateral reach ~= 0.85 * gap)
     var laneW = 150 - 40 * ramp;
-    var maxShift = gap * 0.4; // per-wave drift stays well under the boat's lateral reach (~0.85*gap)
-    run.laneX = Math.max(30, Math.min(W - 30 - laneW,
-      run.laneX + (Math.random() * 2 - 1) * maxShift));
-    var laneX = run.laneX;
-    run.laneLog.push({ y: waveY, x: laneX, w: laneW });
-    if (run.laneLog.length > 300) run.laneLog.shift();
-
     var widthFactor = W / BASE_W;
-    var count = Math.max(1, Math.round(widthFactor * (1 + (Math.random() < 0.35 + 0.35 * ramp ? 1 : 0))));
-    for (var i = 0; i < count; i++) {
-      var def = pickObstacle();
-      var sp = Camp.SPRITES[def.s];
-      var w = sp.r[2] * def.scale, h = sp.r[3] * def.scale;
-      // find an x that (a) leaves the corridor clear over the obstacle's WHOLE
-      // height — the lane drifts up to 0.4px sideways per px of descent, so
-      // tall sprites must keep extra distance (drift cone, not a line) — and
-      // (b) doesn't overlap other recently spawned obstacles
-      var margin = 22 + 0.4 * h;
-      for (var tries = 0; tries < 10; tries++) {
-        var x = Math.random() * (W - w);
-        if (x + w >= laneX - margin && x <= laneX + laneW + margin) continue;
-        var y = waveY + (Math.random() - 0.5) * 40;
-        var clear = true;
-        for (var k = Math.max(0, run.obstacles.length - 14); k < run.obstacles.length; k++) {
-          var o = run.obstacles[k];
-          if (x < o.x + o.w + 8 && x + w > o.x - 8 && y < o.y + o.h + 8 && y + h > o.y - 8) {
-            clear = false;
-            break;
-          }
-        }
-        if (clear) {
-          run.obstacles.push({
-            s: def.s, x: x, y: y, w: w, h: h,
-            hb: sp.hb || [0.1, 0.1, 0.8, 0.8],
-          });
-          break;
-        }
+    var i, def, sp;
+
+    if (waveY >= run.patternUntil) rollPattern(waveY, ramp);
+
+    if (run.pattern === 'calm') {
+      // open water: a breather between set pieces
+      driftLane(gap, laneW, null, false);
+      run.nextWaveAt = waveY + gap * (1.1 + Math.random() * 0.5);
+
+    } else if (run.pattern === 'slalom') {
+      // the corridor swings hard toward one shore, then the other; obstacles
+      // hug the drift cone on both sides so it reads as a winding canyon
+      var target = run.slalomSide > 0 ? W - 60 - laneW : 60;
+      driftLane(gap, laneW, target, run.slalomEase <= 0);
+      if (run.slalomEase > 0) run.slalomEase--;
+      if (Math.abs(run.laneX - target) < 40) run.slalomSide *= -1;
+      [-1, 1].forEach(function (side) {
+        var d = pickObstacle(120);
+        var s = Camp.SPRITES[d.s];
+        var w = s.r[2] * d.scale * 1.25, h = s.r[3] * d.scale * 1.25;
+        var margin = 26 + 0.6 * h;
+        var x = side < 0
+          ? run.laneX - margin - w - 20 - Math.random() * 50
+          : run.laneX + laneW + margin + 20 + Math.random() * 50;
+        if (x > -w * 0.4 && x < W - w * 0.6)
+          placeObstacle(d, x, waveY + (Math.random() - 0.5) * 30, waveY, 6, laneW, 0.6);
+      });
+      if (Math.random() < 0.4) scatterOne(waveY, laneW, 5, 0.6);
+      run.nextWaveAt = waveY + gap * (0.75 + Math.random() * 0.3);
+
+    } else if (run.pattern === 'cluster') {
+      // an archipelago blob on the roomier side of the corridor
+      driftLane(gap, laneW, null, false);
+      var side2 = run.laneX + laneW / 2 > W / 2 ? -1 : 1;
+      var room = side2 < 0 ? run.laneX - 80 : W - (run.laneX + laneW) - 80;
+      if (room > 180) {
+        var cx = side2 < 0
+          ? 40 + Math.random() * (room - 180)
+          : run.laneX + laneW + 120 + Math.random() * (room - 180);
+        var n = 3 + Math.floor(Math.random() * 3);
+        for (i = 0; i < n; i++)
+          placeObstacle(pickObstacle(), cx + (Math.random() - 0.5) * 280,
+                        waveY + (Math.random() - 0.5) * 190, waveY, 2, laneW);
       }
+      if (Math.random() < 0.6) scatterOne(waveY, laneW, 6);
+      run.nextWaveAt = waveY + gap * (0.9 + Math.random() * 0.5);
+
+    } else if (run.pattern === 'wall') {
+      // a line of obstacles across the whole sea with one gap at the corridor
+      driftLane(gap, laneW, null, false);
+      // the gap must stay clear over the wall pieces' WHOLE height while the
+      // lane keeps drifting, so it is padded by the full drift cone
+      var gapPad = 92 - 20 * ramp;
+      var gapStart = run.laneX - gapPad, gapEnd = run.laneX + laneW + gapPad;
+      var x2 = -14;
+      while (x2 < W + 14) {
+        var d3 = pickObstacle(115);
+        var s3 = Camp.SPRITES[d3.s];
+        var w3 = s3.r[2] * d3.scale;
+        if (x2 + w3 * 1.25 > gapStart && x2 < gapEnd) { x2 = gapEnd; continue; }
+        var ob = placeObstacle(d3, x2, waveY + (Math.random() - 0.5) * 26, waveY, -10);
+        x2 += (ob ? ob.w : w3) * (0.95 + Math.random() * 0.2);
+      }
+      run.nextWaveAt = waveY + gap * 1.7; // room to recover behind a wall
+
+    } else {
+      // scatter: loose random field (the classic filler)
+      driftLane(gap, laneW, null, false);
+      var count = Math.max(1, Math.round(widthFactor * (1 + (Math.random() < 0.35 + 0.35 * ramp ? 1 : 0))));
+      for (i = 0; i < count; i++) scatterOne(waveY, laneW, 10);
+      run.nextWaveAt = waveY + gap * (0.7 + Math.random() * 0.6);
     }
-    run.nextWaveAt = waveY + gap * (0.75 + Math.random() * 0.5);
+
+    run.laneLog.push({ y: waveY, x: run.laneX, w: laneW });
+    if (run.laneLog.length > 300) run.laneLog.shift();
   }
 
   function spawnWind() {
@@ -143,17 +257,41 @@ window.Camp = window.Camp || {};
       (t.windSpawnMin + Math.random() * (t.windSpawnMax - t.windSpawnMin)) * (stats.windFreq || 1);
   }
 
-  function spawnMover() {
-    var fromLeft = Math.random() < 0.5;
-    var variant = Math.random() < 0.5 ? 1 : 2;
-    run.movers.push({
-      variant: variant,
-      x: fromLeft ? -80 : W + 80,
-      y: run.worldY + 260 + Math.random() * 320,
-      vx: (fromLeft ? 1 : -1) * (100 + Math.random() * 50),
-      animT: 0,
-    });
-    run.nextMoverAt = run.clock + 9 + Math.random() * 7;
+  /* Kraken tentacles are not part of the obstacle pool: they are bait, not
+   * walls (touching one starts the chase instead of sinking you), so they
+   * deliberately spawn IN the player's path — usually squatting in the safe
+   * corridor with a squeeze gap on one side, sometimes in the open water
+   * right next to it. */
+  function spawnTentacle() {
+    var y = run.nextTentacleAt;
+    run.nextTentacleAt = y + 650 + Math.random() * 650;
+    // the corridor AT THE TENTACLE'S y, not at the newest wave line
+    var lane = null, bd = 1e9;
+    for (var li = run.laneLog.length - 1; li >= 0; li--) {
+      var dd = Math.abs(run.laneLog[li].y - y);
+      if (dd > bd) break; // log is ascending; distance only grows from here
+      bd = dd;
+      lane = run.laneLog[li];
+    }
+    var laneX = lane ? lane.x : run.laneX;
+    var laneW = lane ? lane.w : 150;
+    var def = { s: 'tentacles' + (1 + Math.floor(Math.random() * 3)), scale: 1.3 };
+    var w = Camp.SPRITES[def.s].r[2] * def.scale;
+    for (var tries = 0; tries < 5; tries++) {
+      var x;
+      if (Math.random() < 0.7) {
+        // block one side of the corridor, leave a squeeze gap on the other
+        var f = 0.35 + Math.random() * 0.3;
+        x = Math.random() < 0.5
+          ? laneX + laneW * f - w * 0.85
+          : laneX + laneW * (1 - f) - w * 0.15;
+      } else {
+        // open water just off the corridor, where wanderers sail
+        var off = 130 + Math.random() * 260;
+        x = laneX + laneW / 2 - w / 2 + (Math.random() < 0.5 ? -off : off);
+      }
+      if (placeObstacle(def, x, y + (Math.random() - 0.5) * 60, y, 6)) return;
+    }
   }
 
   function spawnDolphin() {
@@ -214,17 +352,50 @@ window.Camp = window.Camp || {};
 
     // the tank is dry: the kraken wakes up and starts closing in.
     // Wind charges slow it down — chain them to buy precious metres.
-    if (run.fuel <= 0 && !run.kraken) run.kraken = { dist: 540, t: 0, x: run.x };
+    if (run.fuel <= 0 && !run.kraken) run.kraken = { dist: 540, t: 0, x: run.x, mode: 'fuel' };
     if (run.kraken) {
       var k = run.kraken;
       k.t += dt;
-      k.x += (run.x - k.x) * Math.min(1, dt * 1.1); // it hunts you, lazily
-      var close = (46 + Math.min(120, k.t * 14)) * (1 - 0.6 * run.charge);
-      k.dist -= close * dt;
-      if (k.dist <= 78) {
-        run.phase = 'caught';
-        run.catchT = 0;
-        return;
+      if (k.crashT != null) {
+        // it slammed into something — sinks back into the deep
+        k.crashT += dt;
+        k.dist += 500 * dt;
+        if (k.dist > 560) run.kraken = null;
+      } else {
+        // a tentacle-roused kraken hunts with real intent; the fuel one is patient
+        var hunt = k.mode === 'tentacle' ? 2.4 : 1.1;
+        k.x += (run.x - k.x) * Math.min(1, dt * hunt);
+        var close = k.mode === 'tentacle'
+          ? (52 + Math.min(75, k.t * 10)) * (1 - 0.45 * run.charge)
+          : (46 + Math.min(120, k.t * 14)) * (1 - 0.6 * run.charge);
+        k.dist -= close * dt;
+        if (k.dist <= 78) {
+          run.phase = 'caught';
+          run.catchT = 0;
+          return;
+        }
+        // a chasing kraken can be tricked: steer so an obstacle scrolls into
+        // its head — the crash ends the chase (the fuel kraken never stops)
+        if (k.mode === 'tentacle') {
+          var emerge = Math.max(0, Math.min(1, 1 - k.dist / 540));
+          if (emerge > 0.3) {
+            var kr = Camp.SPRITES.kraken0.r;
+            var headTop = -kr[3] * 2 - 6 + emerge * (PLAYER_Y - 78 + kr[3] * 2 + 46) + 66;
+            var headH = 130, headHalfW = 66;
+            for (var q = 0; q < run.obstacles.length; q++) {
+              var ob = run.obstacles[q];
+              if (ob.s.indexOf('tentacles') === 0) continue; // its own arms
+              var oy = ob.y - run.worldY + PLAYER_Y; // obstacle in screen coords
+              if (k.x - headHalfW < ob.x + ob.w && k.x + headHalfW > ob.x &&
+                  headTop < oy + ob.h && headTop + headH > oy) {
+                run.obstacles.splice(q, 1);
+                k.crashT = 0;
+                k.splashY = headTop + headH * 0.5;
+                break;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -245,18 +416,16 @@ window.Camp = window.Camp || {};
 
     // spawning
     while (run.nextWaveAt < run.worldY + H + 200) spawnWave();
+    while (run.nextTentacleAt < run.worldY + H + 200) spawnTentacle();
     if (run.clock >= run.nextWindAt) spawnWind();
-    if (!run.kraken && run.worldY > 2200 && run.clock >= run.nextMoverAt) spawnMover();
     if (run.clock >= run.nextDolphinAt) spawnDolphin();
 
-    // movers cross the field; dolphins are just passing through
-    run.movers.forEach(function (m) { m.x += m.vx * dt; m.animT += dt; });
+    // dolphins are just passing through
     run.dolphins.forEach(function (d) { d.x += d.vx * dt; d.animT += dt; });
-    run.movers = run.movers.filter(function (m) { return m.x > -160 && m.x < W + 160 && m.y > run.worldY - 300; });
     run.dolphins = run.dolphins.filter(function (d) { return d.x > -120 && d.x < W + 120 && d.y > run.worldY - 300; });
 
-    // cull what's far behind
-    run.obstacles = run.obstacles.filter(function (o) { return o.y + o.h > run.worldY - 200; });
+    // cull what's far behind (keep enough behind the boat for the kraken to hit)
+    run.obstacles = run.obstacles.filter(function (o) { return o.y + o.h > run.worldY - 320; });
     run.pickups = run.pickups.filter(function (p) { return p.y > run.worldY - 200 && !p.taken; });
 
     // pickup collection (generous circle around the bolt)
@@ -280,25 +449,26 @@ window.Camp = window.Camp || {};
         var hx = o.x + o.w * o.hb[0], hy = o.y + o.h * o.hb[1];
         var hw = o.w * o.hb[2], hh = o.h * o.hb[3];
         if (bx < hx + hw && bx + bw > hx && by < hy + hh && by + bh > hy) {
+          if (o.s.indexOf('tentacles') === 0) {
+            // brushing a tentacle doesn't sink you — it wakes the KRAKEN
+            run.obstacles.splice(j, 1);
+            run.graceT = 1.0;
+            if (!run.kraken) {
+              run.kraken = { dist: 500, t: 0, x: run.x, mode: 'tentacle' };
+            } else if (run.kraken.crashT != null) {
+              // roused again mid-sink
+              run.kraken.crashT = null;
+              run.kraken.mode = 'tentacle';
+              run.kraken.t = 0;
+              run.kraken.dist = Math.min(run.kraken.dist, 500);
+            } else {
+              run.kraken.dist = Math.max(110, run.kraken.dist - 90); // angrier
+            }
+            break;
+          }
           if (run.armor > 0) {
             run.armor--;
             run.obstacles.splice(j, 1);
-            run.graceT = 0.9;
-            run.shieldFlashT = 0.6;
-            break;
-          }
-          run.phase = 'dying';
-          run.splash = { t: 0, x: run.x };
-          return;
-        }
-      }
-      for (var m = 0; m < run.movers.length; m++) {
-        var mv = run.movers[m];
-        var mx = mv.x - 16, my = mv.y - 13;
-        if (bx < mx + 32 && bx + bw > mx && by < my + 26 && by + bh > my) {
-          if (run.armor > 0) {
-            run.armor--;
-            run.movers.splice(m, 1);
             run.graceT = 0.9;
             run.shieldFlashT = 0.6;
             break;
@@ -323,7 +493,7 @@ window.Camp = window.Camp || {};
   // ---- rendering ----------------------------------------------------------
   function draw() {
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#ddf0f9';
+    ctx.fillStyle = '#8fd5ef';
     ctx.fillRect(0, 0, W, H);
 
     // scrolling water texture
@@ -335,26 +505,47 @@ window.Camp = window.Camp || {};
           ctx.drawImage(tile, tx, Math.round(ty));
     }
 
-    // sparse procedural wave dashes so the open sea doesn't look empty
-    ctx.fillStyle = 'rgba(126, 190, 216, 0.5)';
-    var cell = 96;
+    // sparse procedural ripples: white foam curls and deeper-blue swells,
+    // swaying gently so the sea feels alive
+    var cell = 80;
     var row0 = Math.floor((run.worldY - PLAYER_Y) / cell) - 1;
     for (var row = row0; row < row0 + H / cell + 2; row++) {
       for (var col = 0; col < W / cell + 1; col++) {
         var h1 = ((row * 2654435761 ^ col * 96777) >>> 0) % 1000;
-        if (h1 < 550) continue; // not every cell gets a wave
-        var wx = col * cell + (h1 % 61);
-        var wy = row * cell + (h1 % 83) - (run.worldY - PLAYER_Y);
-        ctx.fillRect(Math.round(wx), Math.round(wy), 10 + (h1 % 14), 2);
-        if (h1 % 3 === 0) ctx.fillRect(Math.round(wx + 4), Math.round(wy + 3), 6 + (h1 % 8), 2);
+        if (h1 < 430) continue; // not every cell gets a ripple
+        var sway = Math.sin(run.bobT * 0.9 + row * 1.7 + col) * 3;
+        var wx = col * cell + (h1 % 53) + sway;
+        var wy = row * cell + (h1 % 67) - (run.worldY - PLAYER_Y);
+        var len = 12 + (h1 % 16);
+        if (h1 % 2) {
+          // foam ripple with upturned tips
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.fillRect(Math.round(wx), Math.round(wy), len, 2);
+          ctx.fillRect(Math.round(wx - 2), Math.round(wy - 2), 3, 2);
+          ctx.fillRect(Math.round(wx + len - 1), Math.round(wy - 2), 3, 2);
+        } else {
+          // darker water shadow under a swell
+          ctx.fillStyle = 'rgba(46, 138, 178, 0.35)';
+          ctx.fillRect(Math.round(wx), Math.round(wy), len, 2);
+          ctx.fillRect(Math.round(wx + 3), Math.round(wy + 3), Math.max(4, len - 8), 2);
+        }
       }
     }
 
     function sy(worldY) { return PLAYER_Y + (worldY - run.worldY); }
 
-    // shoreline island drifting away at the start of a run
-    if (run.worldY < 900) {
-      Camp.drawSprite(ctx, 'islandC', W / 2 - 235, sy(-150) - 130, 2.5);
+    // the island being escaped from drifts away at the start of a run —
+    // the same key art as the island screen, so the story connects
+    if (run.worldY < 1200) {
+      var isl = Camp.islandArt;
+      if (isl.complete && isl.naturalWidth) {
+        var iw = 560;
+        ctx.imageSmoothingEnabled = true; // key art, not pixel art
+        ctx.drawImage(isl, W / 2 - iw / 2, sy(-60) - iw, iw, iw);
+        ctx.imageSmoothingEnabled = false;
+      } else {
+        Camp.drawSprite(ctx, 'islandC', W / 2 - 235, sy(-150) - 130, 2.5);
+      }
     }
 
     // wake
@@ -380,15 +571,15 @@ window.Camp = window.Camp || {};
       ctx.restore();
     });
 
-    // pickups (bobbing bolt with a wind swirl)
+    // pickups (bobbing energy bolt in a bubble)
     run.pickups.forEach(function (p) {
       var y = sy(p.y) + Math.sin(run.bobT * 3 + p.t) * 3;
       if (y < -80 || y > H + 80) return;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.beginPath();
       ctx.arc(p.x, y, 24, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#7fd4e8';
+      ctx.strokeStyle = '#2e9fc0';
       ctx.lineWidth = 3;
       ctx.stroke();
       Camp.drawSprite(ctx, 'boltSmall', p.x - 16, y - 16, 0.62);
@@ -399,27 +590,17 @@ window.Camp = window.Camp || {};
       var y = sy(o.y);
       if (y > H + 160 || y + o.h < -160) return;
       var def = Camp.SPRITES[o.s];
-      ctx.drawImage(Camp.sheet, def.r[0], def.r[1], def.r[2], def.r[3],
-        Math.round(o.x), Math.round(y), Math.round(o.w), Math.round(o.h));
-    });
-
-    // crossing jet-skis with their wakes
-    run.movers.forEach(function (m) {
-      var y = sy(m.y);
-      if (y < -90 || y > H + 90) return;
-      // wake dashes trailing behind
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      for (var wk = 1; wk <= 4; wk++) {
-        var tx = m.x - Math.sign(m.vx) * wk * 16;
-        ctx.fillRect(Math.round(tx - 5), Math.round(y + 6), 10, 2);
+      if (o.flip) {
+        ctx.save();
+        ctx.translate(Math.round(o.x) + Math.round(o.w), Math.round(y));
+        ctx.scale(-1, 1);
+        ctx.drawImage(Camp.sheet, def.r[0], def.r[1], def.r[2], def.r[3],
+          0, 0, Math.round(o.w), Math.round(o.h));
+        ctx.restore();
+      } else {
+        ctx.drawImage(Camp.sheet, def.r[0], def.r[1], def.r[2], def.r[3],
+          Math.round(o.x), Math.round(y), Math.round(o.w), Math.round(o.h));
       }
-      var frame = 'jetski' + m.variant + (Math.floor(m.animT * 8) % 2 ? 'a' : 'b');
-      var r = Camp.SPRITES[frame].r;
-      ctx.save();
-      ctx.translate(Math.round(m.x), Math.round(y));
-      if (m.vx > 0) ctx.scale(-1, 1);
-      ctx.drawImage(Camp.sheet, r[0], r[1], r[2], r[3], -r[2], -r[3], r[2] * 2, r[3] * 2);
-      ctx.restore();
     });
 
     // the kraken rising behind the boat — screen-space so the chase is
@@ -432,6 +613,17 @@ window.Camp = window.Camp || {};
       var drawTop = -kr[3] * 2 - 6 + emerge * (PLAYER_Y - 78 + kr[3] * 2 + 46);
       ctx.drawImage(Camp.sheet, kr[0], kr[1], kr[2], kr[3],
         Math.round(kk.x - kr[2]), Math.round(drawTop), kr[2] * 2, kr[3] * 2);
+      // it just crashed into an obstacle — white shockwave where it hit
+      if (kk.crashT != null && kk.crashT < 0.7) {
+        for (var kc2 = 0; kc2 < 3; kc2++) {
+          var crr2 = 12 + kk.crashT * 110 + kc2 * 16;
+          ctx.strokeStyle = 'rgba(255,255,255,' + Math.max(0, 0.85 - kk.crashT * 1.1).toFixed(2) + ')';
+          ctx.lineWidth = 6 - kc2;
+          ctx.beginPath();
+          ctx.arc(kk.x, kk.splashY, crr2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
       // dread creeps in as it gets close
       var dread = Math.max(0, Math.min(0.16, (1 - kk.dist / 540) * 0.16));
       ctx.fillStyle = 'rgba(56, 18, 84, ' + dread.toFixed(3) + ')';
