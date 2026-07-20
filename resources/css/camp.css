@@ -30,6 +30,16 @@
   --glass: rgba(9, 24, 42, 0.74);
   --glass-hi: rgba(20, 44, 72, 0.78);
   --danger: #ff5d55;
+  /* Pixel-art UI kit. Panels are solid — frosted glass, soft shadows and smooth
+     gradients all read as a different material next to the sprites, so every
+     panel here is a flat fill, a hard outline, a one-pixel bevel and a shadow
+     that is offset rather than blurred. */
+  --panel: #0e2138;
+  --panel-hi: #17324f;
+  --edge: #050f1c;      /* hard outer outline */
+  --edge-lit: #3f6f9c;  /* inner bevel, catches the light */
+  --px-shadow: 5px 5px 0 rgba(3, 9, 18, 0.55);
+  --px-shadow-lg: 7px 7px 0 rgba(3, 9, 18, 0.6);
   --display: 'Cinzel', 'Segoe UI', serif;
   --body: 'Segoe UI', Verdana, sans-serif;
 }
@@ -44,17 +54,26 @@ html, body {
   -webkit-user-select: none;
 }
 
-/* mystical ocean backdrop shared by island + shop screens */
+/* Mystical ocean backdrop shared by island + shop screens.
+   `cover` on a 320x179 source lands on a fractional scale — 6.03x at 1080p — so
+   its pixels come out alternately 6 and 7 screen px wide and the beat pattern
+   crawls. --ocean-w/h are set per render to the next whole multiple up. */
 .ocean-bg {
-  background: var(--deep) url('../camp/ocean.png') center / cover no-repeat fixed;
+  background: var(--deep) url('../camp/ocean-px.png') center / cover no-repeat fixed;
+  background-size: var(--ocean-w, cover) var(--ocean-h, auto);
+  /* the art ships small on purpose — blow it back up as hard pixels, not blur */
+  image-rendering: pixelated;
 }
+/* ONE vignette. There used to be three layers here — a teal wash, a 0.75 dark
+   radial and a three-stop linear — and stacked with the mist and two cloud
+   shadows they composited the bottom of the sea down to luminance 15/255, which
+   is where the menu bar and two of the four boats live. The teal wash also
+   fought the shared palette. Corners only, and capped. */
 .ocean-bg::before {
   content: '';
   position: absolute; inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 42%, rgba(62, 230, 239, 0.10), transparent 55%),
-    radial-gradient(ellipse at 50% 120%, rgba(4, 10, 20, 0.75), transparent 60%),
-    linear-gradient(rgba(4, 10, 20, 0.32), rgba(4, 10, 20, 0.15) 30%, rgba(4, 10, 20, 0.45));
+  background: radial-gradient(ellipse 82% 82% at 50% 46%,
+    transparent 45%, rgba(4, 10, 20, 0.40) 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -66,42 +85,32 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 
 button { font-family: inherit; cursor: pointer; }
 
-/* glass panel base */
+/* panel base — see the pixel UI kit note in :root */
 .glass {
-  background: var(--glass);
-  border: 1px solid var(--gold-soft);
-  border-radius: 10px;
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(6px);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--edge-lit), var(--px-shadow);
 }
 
 /* ============================== Screen 1: island ========================== */
 #island-stage { position: absolute; inset: 0; overflow: hidden; z-index: 1; }
 
-/* drifting mist layers over the water */
-#island-stage::before, #island-stage::after {
+/* One drifting mist layer. There were two, but with the cloud shadows added on
+   top that made four soft blobs smearing across each other — the clouds do this
+   job better because they are shaped, so the mist is now just a haze under them. */
+#island-stage::before {
   content: '';
   position: absolute;
   top: 0; bottom: 0;
+  left: -30%;
   width: 160%;
   pointer-events: none;
   z-index: 2;
-}
-#island-stage::before {
-  left: -30%;
   background:
     radial-gradient(ellipse 34% 14% at 24% 36%, rgba(220, 240, 250, 0.10), transparent 70%),
     radial-gradient(ellipse 26% 10% at 68% 64%, rgba(220, 240, 250, 0.08), transparent 70%);
   animation: mist-drift 46s linear infinite;
-}
-#island-stage::after {
-  left: -30%;
-  background:
-    radial-gradient(ellipse 30% 12% at 46% 22%, rgba(200, 235, 250, 0.07), transparent 70%),
-    radial-gradient(ellipse 38% 13% at 82% 80%, rgba(200, 235, 250, 0.09), transparent 70%);
-  animation: mist-drift 67s linear infinite reverse;
 }
 @keyframes mist-drift {
   from { transform: translateX(-8%); }
@@ -109,36 +118,33 @@ button { font-family: inherit; cursor: pointer; }
   to   { transform: translateX(-8%); }
 }
 
-.island-ripples {
+/* Rocks, reefs and a wreck scattered through the open water. Bottom of the pile,
+   so everything else — wakes, island, boats — simply passes over them, and held
+   slightly under full strength so they settle into the sea rather than sit on it. */
+.sea-deco {
   position: absolute;
-  left: 50%; top: 52%;
+  height: auto;
   transform: translate(-50%, -50%);
+  image-rendering: pixelated;
   pointer-events: none;
   z-index: 0;
-}
-.ripple {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 10px; height: 5px;
-  border: 2px solid rgba(180, 230, 245, 0.35);
-  border-radius: 50%;
-  animation: ripple-out 7.8s ease-out infinite;
-}
-@keyframes ripple-out {
-  0%   { width: 30vw; height: 17vw; margin: -8.5vw 0 0 -15vw; opacity: 0; }
-  18%  { opacity: 0.5; }
-  100% { width: 58vw; height: 33vw; margin: -16.5vw 0 0 -29vw; opacity: 0; }
+  opacity: 0.82;
+  filter: drop-shadow(3px 3px 0 rgba(3, 9, 18, 0.3));
 }
 
+
+/* Square, and lit by one stepped ring rather than a soft bloom. Dropped below
+   the boats: at z-index 3 they shared a layer with the fleet and glowed in the
+   same teal as the island rim and the hover state, so they competed with the
+   only things on the board that carry information. */
 .firefly {
   position: absolute;
-  width: 4px; height: 4px;
-  border-radius: 50%;
-  background: #aef7ec;
-  box-shadow: 0 0 8px 3px rgba(62, 230, 239, 0.55);
+  width: 3px; height: 3px;
+  background: #cdf3ea;
+  box-shadow: 0 0 0 3px rgba(120, 210, 205, 0.22);
   pointer-events: none;
-  z-index: 3;
-  animation: firefly-float ease-in-out infinite alternate;
+  z-index: 1;
+  animation: firefly-float steps(12) infinite alternate;
   opacity: 0;
 }
 @keyframes firefly-float {
@@ -152,158 +158,187 @@ button { font-family: inherit; cursor: pointer; }
   position: absolute;
   left: 50%; top: 52%;
   transform: translate(-50%, -50%);
-  width: min(42vw, 60vh);
+  /* --island-px is set per render in screens.js and is always a whole multiple
+     of the art's 160px source, so every source pixel lands on the same number of
+     screen pixels. It steps down as the leading team pulls away. No transition:
+     tweening the width would slide it through the fractional sizes this is
+     specifically avoiding. */
+  width: var(--island-px, 40vw);
   height: auto;
   pointer-events: none;
-  filter: drop-shadow(0 0 44px rgba(62, 230, 239, 0.28));
-  animation: island-float 7s ease-in-out infinite alternate;
+  image-rendering: pixelated;
+  z-index: 2;   /* above the wakes at 1, so a long trail slips under the coast */
+  /* a hard rim instead of a soft bloom — four offset shadows, no blur */
+  filter:
+    drop-shadow(3px 0 0 rgba(62, 230, 239, 0.22))
+    drop-shadow(-3px 0 0 rgba(62, 230, 239, 0.22))
+    drop-shadow(0 3px 0 rgba(62, 230, 239, 0.22))
+    drop-shadow(0 -3px 0 rgba(62, 230, 239, 0.22));
+  animation: island-float 7s steps(6) infinite alternate;
 }
+/* whole-pixel drift, and no scaling: resampling a pixel image by 1.2% makes the
+   blocks crawl and shimmer against each other */
 @keyframes island-float {
-  from { transform: translate(-50%, -50.6%) scale(1); }
-  to   { transform: translate(-50%, -49.4%) scale(1.012); }
+  from { transform: translate(-50%, calc(-50% - 3px)); }
+  to   { transform: translate(-50%, calc(-50% + 3px)); }
 }
 
 .island-title {
   position: absolute;
-  left: 50%; top: 10px;
+  /* Sits down off the edge rather than jammed against it, so the band of water
+     above it reads as sky-side margin and the wordmark belongs to the picture
+     instead of labelling it. Scales with the window: a fixed inset that looks
+     right at 900px tall is lost on a 1080p projector. */
+  left: 50%; top: clamp(22px, 6vh, 72px);
   transform: translateX(-50%);
-  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
   pointer-events: none;
-  z-index: 4;
+  z-index: 6;   /* clear of the cloud shadows at 5 — the wordmark stays unshaded */
 }
-.island-emblem {
-  width: clamp(58px, 6.4vw, 96px);
-  height: auto;
-  margin-bottom: -6px;
-  filter: drop-shadow(0 0 18px rgba(233, 182, 79, 0.45)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6));
-  animation: emblem-glow 3.4s ease-in-out infinite alternate;
-}
-@keyframes emblem-glow {
-  from { filter: drop-shadow(0 0 12px rgba(233, 182, 79, 0.35)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6)); }
-  to   { filter: drop-shadow(0 0 26px rgba(233, 182, 79, 0.6)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6)); }
-}
-.island-title-sub::before, .island-title-sub::after {
-  content: '';
-  display: inline-block;
-  vertical-align: middle;
-  width: clamp(30px, 4vw, 70px);
-  height: 1px;
-  margin: 0 10px;
-  background: linear-gradient(90deg, transparent, var(--gold-soft));
-}
-.island-title-sub::after {
-  background: linear-gradient(270deg, transparent, var(--gold-soft));
-}
-.island-title-main {
-  font-family: var(--display);
-  font-size: clamp(22px, 3.2vw, 44px);
-  font-weight: 900;
-  letter-spacing: 7px;
-  background: linear-gradient(180deg, #ffe9b0, var(--gold) 55%, #a06f1f);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 26px rgba(233, 182, 79, 0.35);
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
-}
-.island-title-sub {
-  font-family: var(--display);
-  font-size: clamp(11px, 1.15vw, 16px);
-  font-weight: 700;
-  letter-spacing: 5px;
-  color: var(--teal);
-  text-transform: uppercase;
-  text-shadow: 0 0 14px rgba(62, 230, 239, 0.55), 0 2px 3px rgba(0, 0, 0, 0.8);
-  margin-top: 2px;
-}
+/* the wordmark is a canvas from the bitmap font — see Camp.renderText */
+.island-title canvas { display: block; }
 
 .island-ship {
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   cursor: pointer;
-  animation: bob 2.8s ease-in-out infinite alternate;
-  transition: filter 0.15s;
+  animation: bob 2.8s steps(4) infinite alternate;
+  transition: filter 0.1s;
   z-index: 3;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(4px 4px 0 rgba(3, 9, 18, 0.45));
 }
-.island-ship:hover { filter: drop-shadow(0 0 14px rgba(62, 230, 239, 0.8)); }
-@keyframes bob { from { margin-top: -5px; } to { margin-top: 5px; } }
-.ship-canvas { filter: drop-shadow(0 0 3px rgba(255,255,255,0.35)); }
+.island-ship:hover {
+  filter:
+    drop-shadow(3px 0 0 var(--teal)) drop-shadow(-3px 0 0 var(--teal))
+    drop-shadow(0 3px 0 var(--teal)) drop-shadow(0 -3px 0 var(--teal));
+}
+@keyframes bob { from { margin-top: -4px; } to { margin-top: 4px; } }
+.ship-canvas { filter: none; }
 
+/* A foam trail from each boat back toward the island. Sits at z-index 1, below
+   the island at 2, so a long wake slips under the coast instead of crossing it.
+   The rotation is set per boat in screens.js, pivoting on the boat itself. */
+.ship-wake {
+  position: absolute;
+  height: 8px;
+  margin-top: -4px;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  z-index: 1;
+  background: repeating-linear-gradient(90deg,
+    rgba(173, 216, 240, 0.34) 0 8px,
+    rgba(173, 216, 240, 0) 8px 18px);
+  /* strongest just behind the boat, spent well before it reaches the shore */
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0, #000 7%, rgba(0,0,0,0) 100%);
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0, #000 7%, rgba(0,0,0,0) 100%);
+  animation: wake-march 1.5s steps(3) infinite;
+}
+/* the foam marches back toward the island, as it would behind a boat pulling away */
+@keyframes wake-march {
+  from { background-position-x: 0; }
+  to   { background-position-x: 18px; }
+}
+
+/* Deliberately above the boats: a shadow that misses them is not a shadow. */
+.cloud-shadow {
+  position: absolute;
+  left: -30%; top: -30%;
+  width: 160%; height: 160%;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+  z-index: 5;
+}
+.cloud-shadow.cloud-a { animation: cloud-drift-a 96s ease-in-out infinite alternate; }
+.cloud-shadow.cloud-b { opacity: 0.7; animation: cloud-drift-b 158s ease-in-out infinite alternate; }
+@keyframes cloud-drift-a {
+  from { transform: translate(-7%, -5%); }
+  to   { transform: translate(7%, 5%); }
+}
+@keyframes cloud-drift-b {
+  from { transform: translate(6%, 7%) scale(1.18); }
+  to   { transform: translate(-6%, -4%) scale(1.18); }
+}
+
+/* Rank numeral, and the leader's crown. These are the only things on the board
+   whose whole job is saying who is winning, so they get real weight — the medal
+   coin they replaced was 10px, smaller than the shell icon next to it. */
+.rank-badge {
+  display: flex; align-items: center;
+  margin: -2px 1px -2px -2px;
+}
+.ship-crown { margin-bottom: -2px; }
+.island-ship.leader .ship-plate {
+  box-shadow:
+    inset 0 0 0 2px var(--gold),
+    inset 0 2px 0 3px rgba(255, 255, 255, 0.28),
+    inset 0 -2px 0 3px rgba(0, 0, 0, 0.22);
+}
+
+/* kept tight — the boats are small now, and an oversized plate would read as a
+   label with a boat attached rather than a boat with a name on it */
 .ship-plate {
   color: #fff;
-  font-weight: 800; font-size: 13px;
-  padding: 3px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 20px;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.35);
+  font-weight: 800; font-size: 11px;
+  padding: 2px 7px;
+  display: flex; align-items: center; gap: 5px;
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.25);
   white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+/* distance and shells sit together on one strip, since they are the two numbers
+   a team checks — the corner tables used to carry them in separate rows */
+.ship-stats {
+  display: flex; align-items: stretch;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  box-shadow: 3px 3px 0 rgba(3, 9, 18, 0.5);
+  font-weight: 700; font-size: 12px;
+  white-space: nowrap;
 }
 .ship-dist {
   font-family: var(--display);
-  font-weight: 700; font-size: 13px;
   letter-spacing: 1px;
   color: var(--gold);
-  text-shadow: 0 0 10px rgba(233, 182, 79, 0.5), 0 2px 3px rgba(0, 0, 0, 0.9);
-  background: rgba(6, 15, 28, 0.72);
-  border: 1px solid var(--gold-soft);
-  border-radius: 12px;
-  padding: 1px 10px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+  padding: 0 6px;
+}
+/* Tonight's line. Only appears when there is something to report, so a quiet
+   board stays quiet and the line itself means "something happened here". */
+.ship-tonight {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 2px;
+  font-weight: 800; font-size: 11px;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.65);
+}
+.ship-tonight .gain { color: #8ff0b4; }
+.ship-tonight .tonight-label {
+  color: var(--text-dim);
+  font-weight: 700;
+  text-transform: lowercase;
+}
+.ship-tonight .moved {
+  padding: 0 4px;
+  border: 2px solid var(--edge);
+  background: var(--panel);
+}
+.ship-tonight .moved.up { color: #8ff0b4; }
+.ship-tonight .moved.down { color: #ff9b93; }
+
+.ship-shells {
+  display: flex; align-items: center; gap: 4px;
+  color: #ffd3de;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+  padding: 1px 6px 1px 5px;
+  border-left: 2px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.team-card {
-  position: absolute;
-  width: 252px;
-  background: var(--glass);
-  border: 1px solid var(--gold-soft);
-  border-radius: 12px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.08);
-  backdrop-filter: blur(6px);
-  cursor: pointer;
-  overflow: hidden;
-  transition: transform 0.15s, box-shadow 0.15s;
-  z-index: 5;
-}
-.team-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 22px rgba(62, 230, 239, 0.25), inset 0 1px 0 rgba(255,255,255,0.1);
-}
-.team-card-bar {
-  color: #fff;
-  font-family: var(--display);
-  font-weight: 700; font-size: 16px;
-  letter-spacing: 1px;
-  padding: 8px 12px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-.team-card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.team-card-medal {
-  font-size: 17px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
-  flex: none;
-}
-/* ornamental gold corner ticks */
-.team-card::after {
-  content: '';
-  position: absolute; inset: 4px;
-  pointer-events: none;
-  border-radius: 9px;
-  background:
-    linear-gradient(var(--gold-soft), var(--gold-soft)) top left / 14px 1px,
-    linear-gradient(var(--gold-soft), var(--gold-soft)) top left / 1px 14px,
-    linear-gradient(var(--gold-soft), var(--gold-soft)) bottom right / 14px 1px,
-    linear-gradient(var(--gold-soft), var(--gold-soft)) bottom right / 1px 14px;
-  background-repeat: no-repeat;
-}
-.team-card-body { padding: 9px 13px; display: flex; flex-direction: column; gap: 5px; }
-.stat-row { display: flex; justify-content: space-between; font-size: 13.5px; }
-.stat-label { color: var(--text-dim); font-weight: 600; }
-.stat-value { font-weight: 800; color: var(--text); }
 
 /* bottom-center menu bar, main-menu style */
 #island-actions {
@@ -313,24 +348,26 @@ button { font-family: inherit; cursor: pointer; }
   z-index: 6;
   display: flex; gap: 10px;
   align-items: center;
-  background: var(--glass);
-  border: 1px solid var(--gold-soft);
-  border-radius: 14px;
-  padding: 8px 12px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  padding: 8px 10px;
+  box-shadow: inset 0 0 0 1px var(--edge-lit), var(--px-shadow);
 }
 .gear-btn {
   font-size: 18px;
   min-width: 44px; height: 44px;
   color: var(--text);
   font-weight: 800;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  transition: box-shadow 0.15s, background 0.15s;
+  background: var(--panel-hi);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.14), inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  transition: transform 0.08s, background 0.08s;
 }
-.gear-btn:hover { background: rgba(255, 255, 255, 0.12); box-shadow: 0 0 16px rgba(233, 182, 79, 0.35); }
+.gear-btn:hover { background: var(--edge-lit); }
+/* presses in by a pixel instead of glowing */
+.gear-btn:active { transform: translate(2px, 2px); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.35); }
 .end-night-btn {
   font-family: var(--display);
   font-size: 14px;
@@ -338,23 +375,20 @@ button { font-family: inherit; cursor: pointer; }
   padding: 0 16px;
   color: var(--gold);
   white-space: nowrap;
-  border-color: var(--gold-soft);
 }
+/* buttons carry a pixel glyph plus a label, so lay them out as a row */
+.gear-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-glyph { flex: none; }
 
 /* ============================== Podium screen ============================ */
 #screen-podium { display: none; }
 #screen-podium.active { display: block; }
+/* the heading is a bitmap-font canvas, same as the island wordmark */
 #podium-title {
   position: absolute;
   left: 50%; top: 26px;
   transform: translateX(-50%);
-  font-family: var(--display);
-  font-size: clamp(26px, 3.4vw, 46px);
-  font-weight: 900;
-  letter-spacing: 6px;
-  background: linear-gradient(180deg, #ffe9b0, var(--gold) 55%, #a06f1f);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+  line-height: 0;
   z-index: 2;
 }
 #podium-stage {
@@ -374,24 +408,25 @@ button { font-family: inherit; cursor: pointer; }
 }
 .podium-col.revealed { opacity: 1; transform: translateY(0); }
 .podium-col.winner .podium-block {
-  box-shadow: 0 0 34px rgba(233, 182, 79, 0.55), inset 0 1px 0 rgba(255,255,255,0.25);
   border-color: var(--gold);
+  box-shadow: inset 0 0 0 2px rgba(233, 182, 79, 0.45), var(--px-shadow);
 }
-.podium-col.winner .podium-boat { animation: bob 2.2s ease-in-out infinite alternate; }
-.podium-col.winner .podium-boat::after {
-  content: '👑';
+.podium-col.winner .podium-boat { animation: bob 2.2s steps(4) infinite alternate; }
+/* pixel crown, drawn in pixelart.js and revealed with the winner */
+.podium-crown {
   position: absolute;
   top: -30px; left: 50%;
   transform: translateX(-50%);
-  font-size: 26px;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+  opacity: 0;
+  transition: opacity 0.3s;
 }
-.podium-boat { position: relative; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.podium-col.winner .podium-crown { opacity: 1; }
+.podium-boat { position: relative; filter: drop-shadow(4px 4px 0 rgba(3, 9, 18, 0.45)); }
 .podium-name {
   color: #fff; font-weight: 800; font-size: 14px;
   padding: 3px 12px;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 20px;
+  border-radius: 0;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
@@ -404,11 +439,10 @@ button { font-family: inherit; cursor: pointer; }
 }
 .podium-block {
   width: clamp(110px, 13vw, 170px);
-  background: linear-gradient(180deg, var(--glass-hi), var(--glass));
-  border: 1px solid var(--gold-soft);
-  border-radius: 10px 10px 0 0;
-  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.12);
-  backdrop-filter: blur(5px);
+  background: linear-gradient(180deg, var(--panel-hi) 0 22%, var(--panel) 22% 100%);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--edge-lit), var(--px-shadow);
   display: flex; align-items: flex-start; justify-content: center;
 }
 .podium-rank {
@@ -428,7 +462,7 @@ button { font-family: inherit; cursor: pointer; }
   position: absolute;
   top: -20px;
   width: 10px; height: 14px;
-  border-radius: 2px;
+  border-radius: 0;
   opacity: 0; /* hidden while waiting out its animation-delay */
   animation: confetti-fall linear forwards;
   pointer-events: none;
@@ -469,7 +503,6 @@ button { font-family: inherit; cursor: pointer; }
   padding: 12px 20px;
   background: rgba(6, 14, 26, 0.78);
   border-bottom: 1px solid var(--gold-soft);
-  backdrop-filter: blur(8px);
 }
 .shop-header .spacer { flex: 1; }
 #shop-team-badge {
@@ -479,7 +512,7 @@ button { font-family: inherit; cursor: pointer; }
   letter-spacing: 1px;
   padding: 6px 16px;
   border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 20px;
+  border-radius: 0;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.3);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
@@ -495,24 +528,26 @@ button { font-family: inherit; cursor: pointer; }
   font-family: var(--display);
   font-size: 22px; font-weight: 900;
   color: var(--gold);
-  background: var(--glass);
-  border: 1px solid var(--gold-soft);
-  border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 18px rgba(233, 182, 79, 0.18);
-  padding: 6px 18px;
-  text-shadow: 0 0 12px rgba(233, 182, 79, 0.5);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--edge-lit), var(--px-shadow);
+  padding: 5px 14px;
+  display: inline-flex; align-items: center; gap: 9px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
 }
 .back-btn {
   font-size: 14px; font-weight: 800;
   color: var(--text);
-  background: var(--glass-hi);
-  border: 1px solid var(--gold-soft);
-  border-radius: 10px;
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.5);
-  padding: 9px 14px;
-  transition: box-shadow 0.15s;
+  background: var(--panel-hi);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), var(--px-shadow);
+  padding: 8px 13px;
+  transition: background 0.1s, transform 0.1s;
 }
-.back-btn:hover { box-shadow: 0 5px 14px rgba(0,0,0,0.5), 0 0 14px rgba(62, 230, 239, 0.3); }
+.back-btn:hover { background: var(--edge-lit); }
+.back-btn:active { transform: translate(3px, 3px); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.3); }
 
 .shop-body {
   flex: 1;
@@ -542,40 +577,42 @@ button { font-family: inherit; cursor: pointer; }
   flex: 1 1 0;
   min-width: 142px;
   max-width: 190px;
-  background: var(--glass);
-  border-radius: 12px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,0.07);
-  backdrop-filter: blur(5px);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: var(--px-shadow);
   padding: 10px;
   display: flex; flex-direction: column; align-items: center;
   text-align: center;
   gap: 5px;
-  transition: transform 0.14s, box-shadow 0.14s;
+  transition: transform 0.1s, box-shadow 0.1s;
 }
 /* rarity frames: bronze -> silver -> gold -> epic -> legendary */
-.item-card.tier-0 { border: 1px solid rgba(169, 116, 63, 0.75); }
-.item-card.tier-1 { border: 1px solid rgba(200, 211, 221, 0.65); }
-.item-card.tier-2 { border: 1px solid rgba(233, 182, 79, 0.85); }
+/* rarity keeps its colour but inherits the 3px frame; the rarer tiers get an
+   inner ring instead of the bloom they used to carry */
+.item-card.tier-0 { border-color: rgba(169, 116, 63, 0.9); }
+.item-card.tier-1 { border-color: rgba(200, 211, 221, 0.8); }
+.item-card.tier-2 { border-color: rgba(233, 182, 79, 0.95); }
 .item-card.tier-3 {
-  border: 1px solid rgba(186, 108, 235, 0.9);
-  box-shadow: 0 0 18px rgba(186, 108, 235, 0.28), 0 10px 26px rgba(0, 0, 0, 0.55);
+  border-color: #ba6ceb;
+  box-shadow: inset 0 0 0 1px rgba(186, 108, 235, 0.45), var(--px-shadow);
 }
 .item-card.tier-4 {
-  border: 1px solid rgba(62, 230, 239, 0.9);
-  box-shadow: 0 0 24px rgba(62, 230, 239, 0.35), 0 0 10px rgba(233, 182, 79, 0.3), 0 10px 26px rgba(0, 0, 0, 0.55);
+  border-color: var(--teal);
+  box-shadow: inset 0 0 0 1px rgba(62, 230, 239, 0.5), var(--px-shadow);
 }
 .item-card.owned { cursor: pointer; }
-.item-card.owned:hover { transform: translateY(-3px); }
+.item-card.owned:hover { transform: translate(-2px, -2px); box-shadow: var(--px-shadow-lg); }
 .item-card.equipped {
-  border: 2px solid var(--emerald);
-  box-shadow: 0 0 0 1px rgba(46, 204, 113, 0.5), 0 0 26px rgba(46, 204, 113, 0.4), 0 10px 26px rgba(0, 0, 0, 0.55);
+  border-color: var(--emerald);
+  box-shadow: inset 0 0 0 2px rgba(46, 204, 113, 0.4), var(--px-shadow);
 }
 
 .item-icon {
   width: 104px; height: 104px;
   display: flex; align-items: center; justify-content: center;
   background: linear-gradient(160deg, #f6eeda, #d8cba8);
-  border-radius: 10px;
+  border-radius: 0;
   border: 1px solid rgba(0, 0, 0, 0.4);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 -2px 4px rgba(0,0,0,0.15);
 }
@@ -587,20 +624,21 @@ button { font-family: inherit; cursor: pointer; }
   font-family: var(--display);
   font-size: 15px; font-weight: 700; letter-spacing: 1px;
   color: #241503;
-  background: linear-gradient(180deg, #ffdf96, var(--gold) 60%, #c98f2b);
-  border: 1px solid #8a5f16;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 14px rgba(233, 182, 79, 0.3), inset 0 1px 0 rgba(255,255,255,0.5);
-  padding: 5px 16px;
-  transition: filter 0.12s, transform 0.12s;
+  /* two flat bands with a hard stop, not a smooth ramp */
+  background: linear-gradient(180deg, #ffdf96 0 45%, var(--gold) 45% 100%);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 -3px 0 rgba(140, 95, 22, 0.55), 3px 3px 0 rgba(3, 9, 18, 0.5);
+  padding: 4px 12px;
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: filter 0.1s, transform 0.1s;
 }
 .buy-btn:hover { filter: brightness(1.1); }
-.buy-btn:active { transform: translateY(2px); }
+.buy-btn:active { transform: translate(3px, 3px); box-shadow: inset 0 -3px 0 rgba(140, 95, 22, 0.55); }
 .buy-btn.poor {
-  background: linear-gradient(180deg, #46586b, #2c3a4a);
+  background: linear-gradient(180deg, #46586b 0 45%, #2c3a4a 45% 100%);
   color: #8296a8;
-  border-color: #1d2835;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3), 3px 3px 0 rgba(3, 9, 18, 0.4);
 }
 .buy-btn.shake { animation: shake 0.3s; }
 @keyframes shake {
@@ -622,16 +660,15 @@ button { font-family: inherit; cursor: pointer; }
 .shop-preview {
   background: var(--glass);
   border: 1px solid var(--gold-soft);
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,0.07);
-  backdrop-filter: blur(5px);
   padding: 12px;
   display: flex; flex-direction: column; align-items: center;
 }
 #shop-preview-boat {
   display: flex; justify-content: center;
   background: radial-gradient(ellipse at center, rgba(62, 230, 239, 0.14), transparent 70%);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 4px 0;
 }
 #shop-preview-boat canvas { filter: drop-shadow(0 0 6px rgba(255,255,255,0.25)); }
@@ -639,7 +676,7 @@ button { font-family: inherit; cursor: pointer; }
   width: 100%; margin-top: 8px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 7px 10px;
 }
 .preview-part { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0; }
@@ -651,13 +688,13 @@ button { font-family: inherit; cursor: pointer; }
   font-family: var(--display);
   font-size: 26px; font-weight: 900; letter-spacing: 4px;
   color: #06220f;
-  background: linear-gradient(180deg, #7bf2a8, var(--emerald) 55%, #147a3d);
-  border: 1px solid #0c5228;
-  border-radius: 12px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 0 30px rgba(46, 204, 113, 0.35), inset 0 1px 0 rgba(255,255,255,0.5);
-  padding: 18px 10px;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
-  transition: filter 0.12s, transform 0.12s;
+  background: linear-gradient(180deg, #7bf2a8 0 45%, var(--emerald) 45% 100%);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 -4px 0 rgba(12, 82, 40, 0.6), var(--px-shadow);
+  padding: 16px 10px;
+  text-shadow: 2px 2px 0 rgba(255, 255, 255, 0.22);
+  transition: filter 0.1s, transform 0.1s;
 }
 .play-btn:hover { filter: brightness(1.08); }
 .play-btn:active { transform: translateY(2px); }
@@ -696,14 +733,14 @@ button { font-family: inherit; cursor: pointer; }
   width: 210px; height: 15px;
   background: rgba(6, 15, 28, 0.78);
   border: 1px solid var(--gold-soft);
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), inset 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 .hud-bar-fill {
   height: 100%; width: 100%;
   transition: width 0.1s linear;
-  border-radius: 6px;
+  border-radius: 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 #hud-wind-fill { background: linear-gradient(180deg, #9ff5fa, #35c4dd 60%, #1a8ba3); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 12px rgba(62, 230, 239, 0.7); }
@@ -720,7 +757,7 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 700; font-size: 14px; letter-spacing: 1px;
   padding: 5px 16px;
   border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 20px;
+  border-radius: 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.3);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
@@ -731,7 +768,7 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--gold);
   background: rgba(6, 15, 28, 0.78);
   border: 1px solid var(--gold-soft);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 3px 16px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 16px rgba(233, 182, 79, 0.2);
   text-shadow: 0 0 12px rgba(233, 182, 79, 0.45);
@@ -744,10 +781,9 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--text);
   background: rgba(6, 15, 28, 0.85);
   border: 1px solid var(--gold-soft);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 12px 22px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
   animation: pulse 1.2s ease-in-out infinite alternate;
 }
 @keyframes pulse { from { opacity: 0.75; } to { opacity: 1; } }
@@ -773,16 +809,14 @@ button { font-family: inherit; cursor: pointer; }
   display: none;
   align-items: center; justify-content: center;
   background: rgba(4, 10, 20, 0.55);
-  backdrop-filter: blur(3px);
   z-index: 10;
 }
 #game-overlay.visible { display: flex; }
 .over-panel {
   background: var(--glass);
   border: 1px solid var(--gold-soft);
-  border-radius: 14px;
+  border-radius: 0;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.08);
-  backdrop-filter: blur(8px);
   padding: 30px 40px;
   text-align: center;
   min-width: 340px;
@@ -802,7 +836,7 @@ button { font-family: inherit; cursor: pointer; }
 .over-btn {
   font-family: var(--display);
   font-size: 16px; font-weight: 700; letter-spacing: 2px;
-  border-radius: 10px;
+  border-radius: 0;
   padding: 12px 22px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -824,21 +858,19 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 /* ============================== Admin modal ============================== */
-#admin-modal {
+#admin-modal, #award-modal {
   position: fixed; inset: 0;
   display: none;
   align-items: center; justify-content: center;
   background: rgba(4, 10, 20, 0.6);
-  backdrop-filter: blur(3px);
   z-index: 50;
 }
-#admin-modal.visible { display: flex; }
+#admin-modal.visible, #award-modal.visible { display: flex; }
 .admin-panel {
-  background: var(--glass);
-  border: 1px solid var(--gold-soft);
-  border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--edge-lit), 8px 8px 0 rgba(3, 9, 18, 0.6);
   padding: 22px 26px;
   width: 580px; max-width: 94vw;
 }
@@ -857,10 +889,11 @@ button { font-family: inherit; cursor: pointer; }
   padding: 5px 0;
 }
 .admin-row input {
-  background: rgba(255, 255, 255, 0.08);
+  background: #071626;
   color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 6px;
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px rgba(63, 111, 156, 0.5);
 }
 .admin-row input[type="color"] { width: 44px; height: 34px; padding: 2px; }
 .admin-row input[type="text"] { flex: 1; font-size: 14px; font-weight: 700; padding: 7px 9px; }
@@ -870,10 +903,10 @@ button { font-family: inherit; cursor: pointer; }
 .admin-buttons .spacer { flex: 1; }
 .admin-btn {
   font-size: 14px; font-weight: 800;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-  padding: 9px 18px;
+  border: 3px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), 3px 3px 0 rgba(3, 9, 18, 0.5);
+  padding: 8px 16px;
   background: var(--glass-hi);
   color: var(--text);
 }
@@ -885,3 +918,60 @@ button { font-family: inherit; cursor: pointer; }
   background: linear-gradient(180deg, #ff8b84, var(--danger) 55%, #b02e28);
   border-color: #7c1f1a; color: #fff;
 }
+
+/* ============================ Reduced motion ============================== */
+/* The board is ambient by design — drifting cloud, mist, bobbing boats, marching
+   foam. For anyone who has asked the OS to calm things down, hold every one of
+   them still rather than leaving a subset moving. */
+@media (prefers-reduced-motion: reduce) {
+  .cloud-shadow, .ship-wake, .island-ship, .island-canvas,
+  .firefly, #island-stage::before {
+    animation: none !important;
+  }
+  .island-canvas { transition: none !important; }
+}
+
+/* ===================== Award shells (the nightly job) ==================== */
+/* Deliberately big targets: a leader is doing this on a laptop trackpad, in the
+   dark, with kids watching. Every press applies and saves on the spot. */
+.award-panel { width: 620px; }
+.award-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0;
+}
+.award-team {
+  flex: 1;
+  color: #fff;
+  font-weight: 800; font-size: 14px;
+  padding: 5px 10px;
+  border: 3px solid var(--edge);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.22),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.28);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.award-count {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 74px;
+  padding: 4px 9px;
+  background: #071626;
+  border: 3px solid var(--edge);
+  color: #ffd3de;
+  font-weight: 800; font-size: 15px;
+}
+.award-num { min-width: 34px; text-align: right; }
+.award-btns { display: flex; gap: 5px; }
+.award-btn {
+  min-width: 46px;
+  padding: 7px 8px;
+  color: var(--text);
+  font-weight: 800; font-size: 13px;
+  background: var(--panel-hi);
+  border: 3px solid var(--edge);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.14),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  transition: background 0.08s, transform 0.08s;
+}
+.award-btn:hover { background: var(--edge-lit); }
+.award-btn:active { transform: translate(2px, 2px); box-shadow: inset 0 2px 0 rgba(0,0,0,0.35); }
+.award-btn.take { color: #ff9b93; margin-left: 8px; }

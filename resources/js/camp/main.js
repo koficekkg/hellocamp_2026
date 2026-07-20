@@ -4,6 +4,14 @@ window.Camp = window.Camp || {};
 (function () {
   var current = null;
 
+  // screens.js keeps its own copy inside its closure; this file needs one too
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
   /* Switch screens: 'island' | 'shop' | 'game' | 'podium'. teamIndex applies to shop/game. */
   Camp.go = function (screen, teamIndex) {
     if (current === 'game' && screen !== 'game') Camp.Game.stop();
@@ -21,6 +29,64 @@ window.Camp = window.Camp || {};
   };
   Camp.currentScreen = function () { return current; };
 
+  /* ---- award shells ---------------------------------------------------------
+   *
+   * The reason the camp exists: leaders hand out shells for real-life games all
+   * day, and teams spend them in the shipyard. Until now nothing in the codebase
+   * ever awarded any — the only way in was typing an absolute total into the
+   * crew settings form, which meant doing mental arithmetic to give a team ten
+   * shells. This does the arithmetic.
+   *
+   * Awarding applies and saves immediately, so a leader can hand out shells at
+   * the poolside and close the laptop without pressing anything else. */
+  var AWARD_STEPS = [1, 5, 10, 25];
+
+  function openAward() {
+    var host = document.getElementById('award-rows');
+    host.innerHTML = '';
+
+    Camp.state.teams.forEach(function (team, i) {
+      var row = el('div', 'award-row');
+
+      var plate = el('span', 'award-team', team.name);
+      plate.style.background = team.color;
+      row.appendChild(plate);
+
+      var count = el('span', 'award-count');
+      count.appendChild(Camp.renderUiIcon('shell', 2));
+      var num = el('span', 'award-num', String(team.shells));
+      count.appendChild(num);
+      row.appendChild(count);
+
+      var btns = el('span', 'award-btns');
+      AWARD_STEPS.forEach(function (n) {
+        var b = el('button', 'award-btn', '+' + n);
+        b.onclick = function () { bump(team, n, num); };
+        btns.appendChild(b);
+      });
+      // a leader will mis-tap; taking it back should not need the settings form
+      var undo = el('button', 'award-btn take', '−5');
+      undo.onclick = function () { bump(team, -5, num); };
+      btns.appendChild(undo);
+      row.appendChild(btns);
+
+      host.appendChild(row);
+    });
+
+    document.getElementById('award-modal').classList.add('visible');
+  }
+
+  function bump(team, n, num) {
+    team.shells = Math.max(0, team.shells + n);
+    num.textContent = String(team.shells);
+    Camp.save();
+  }
+
+  function closeAward() {
+    document.getElementById('award-modal').classList.remove('visible');
+    Camp.go('island');   // the board shows shell counts, so refresh it
+  }
+
   // ---- crew settings modal -------------------------------------------------
   function openAdmin() {
     var modal = document.getElementById('admin-modal');
@@ -33,8 +99,11 @@ window.Camp = window.Camp || {};
       row.innerHTML =
         '<input type="color" class="admin-color" value="' + team.color + '">' +
         '<input type="text" class="admin-name" maxlength="24" value="' + team.name.replace(/"/g, '&quot;') + '">' +
-        '<label>🐚 <input type="number" class="admin-shells" min="0" max="9999" value="' + team.shells + '"></label>' +
-        '<label>🌊 <input type="number" class="admin-dist" min="0" max="999999" value="' + Math.round(team.distance) + '"></label>';
+        '<label class="lab-shells"><input type="number" class="admin-shells" min="0" max="9999" value="' + team.shells + '"></label>' +
+        '<label class="lab-dist"><input type="number" class="admin-dist" min="0" max="999999" value="' + Math.round(team.distance) + '"></label>';
+      // pixel glyphs in place of the 🐚 / 🌊 these labels used to carry
+      row.querySelector('.lab-shells').insertBefore(Camp.renderUiIcon('shell', 2), row.querySelector('.admin-shells'));
+      row.querySelector('.lab-dist').insertBefore(Camp.renderUiIcon('wave', 2), row.querySelector('.admin-dist'));
       host.appendChild(row);
     });
 
@@ -87,7 +156,10 @@ window.Camp = window.Camp || {};
       'admin-save': S.save,
       'admin-cancel': S.cancel,
       'admin-reset': S.resetAll,
-      'podium-open': S.endNight,
+      'podium-open': S.endNight,   // glyph re-added below — this wipes child nodes
+      'award-title': S.awardTitle,
+      'award-hint': S.awardHint,
+      'award-done': S.done,
       'podium-back': S.podiumBack,
       'intro-skip': S.skip,
       'lang-toggle': Camp.state.lang === 'cs' ? 'EN' : 'CZ',
@@ -96,6 +168,27 @@ window.Camp = window.Camp || {};
       var node = document.getElementById(id);
       if (node) node.textContent = map[id];
     }
+
+    /* Pixel glyphs in place of the emoji these buttons used to carry — the OS
+     * renders emoji as smooth vector art, which is the one thing on screen that
+     * can never match the sprites. Applied after the textContent pass above,
+     * which would otherwise wipe them, and re-applied on every language switch. */
+    glyph('award-open', 'shell');
+    glyph('admin-open', 'settings');
+    glyph('intro-open', 'play');
+    glyph('podium-open', 'flag');
+  }
+
+  function glyph(id, name) {
+    var node = document.getElementById(id);
+    if (!node || !Camp.renderUiIcon) return;
+    // buttons whose label is not in the map above keep their children across a
+    // language switch, so clear the old glyph or they stack up one per switch
+    var old = node.querySelector('.btn-glyph');
+    if (old) old.remove();
+    var icon = Camp.renderUiIcon(name, 2);
+    icon.className = 'btn-glyph';
+    node.insertBefore(icon, node.firstChild);
   }
   Camp.applyStrings = applyStrings;
 
@@ -127,13 +220,22 @@ window.Camp = window.Camp || {};
   document.addEventListener('DOMContentLoaded', function () {
     Camp.applyLang();
     applyStrings();
+    document.getElementById('award-open').onclick = openAward;
+    document.getElementById('award-done').onclick = closeAward;
     document.getElementById('admin-open').onclick = openAdmin;
     document.getElementById('admin-save').onclick = saveAdmin;
     document.getElementById('admin-cancel').onclick = closeAdmin;
     document.getElementById('admin-reset').onclick = resetAll;
     document.getElementById('shop-back').onclick = function () { Camp.go('island'); };
     document.getElementById('shop-play').onclick = function () { Camp.go('game'); };
-    document.getElementById('podium-open').onclick = function () { Camp.go('podium'); };
+    /* Ending the night is what closes it: the standings are recorded so that
+     * tomorrow the board can say what tonight was worth. closeNight refuses if
+     * nothing has sailed since the last one, so opening the podium twice to
+     * show people the reveal again cannot wipe every "tonight" figure. */
+    document.getElementById('podium-open').onclick = function () {
+      Camp.closeNight();
+      Camp.go('podium');
+    };
     document.getElementById('podium-back').onclick = function () { Camp.go('island'); };
     document.getElementById('lang-toggle').onclick = function () {
       Camp.setLang(Camp.state.lang === 'cs' ? 'en' : 'cs');

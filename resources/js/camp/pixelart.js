@@ -368,8 +368,17 @@ window.Camp = window.Camp || {};
   var CHARMS = { dolphin: drawDolphinCharm, goldshell: drawGoldShellCharm };
 
   /* Render a full boat (hull + motor + sail + flag) for a team's equipped build.
-   * Returns a canvas of size (BOAT_W*scale, BOAT_H*scale). */
-  Camp.renderBoat = function (team, scale) {
+   *
+   * `facing` turns the sprite so it points where it is going:
+   *   undefined / 'down'    bow down — the canonical orientation used in the game
+   *   'left' / 'right'      bow out to that side
+   *   'nw' 'ne' 'sw' 'se'   bow out on the diagonal, stern toward the island
+   *
+   * A quarter turn is exact on a pixel grid — a transpose, not a resample. The
+   * diagonals are not: 45 degrees has to resample, so the boat is scaled up to
+   * whole blocks FIRST and only then turned, which keeps the stair-stepping on
+   * the block grid instead of dissolving individual art pixels. */
+  Camp.renderBoat = function (team, scale, facing) {
     scale = scale || 2;
     var unit = document.createElement('canvas');
     unit.width = BOAT_W; unit.height = BOAT_H;
@@ -380,12 +389,55 @@ window.Camp = window.Camp || {};
     (SAILS[team.equipped.sail] || drawTShirtSail)(ctx, team.color);
     if (CHARMS[team.equipped.charm]) CHARMS[team.equipped.charm](ctx);
 
-    var out = document.createElement('canvas');
-    out.width = BOAT_W * scale; out.height = BOAT_H * scale;
-    var octx = out.getContext('2d');
+    var big = document.createElement('canvas');
+    big.width = BOAT_W * scale; big.height = BOAT_H * scale;
+    var bctx = big.getContext('2d');
+    bctx.imageSmoothingEnabled = false;
+    bctx.drawImage(unit, 0, 0, big.width, big.height);
+    if (!facing || facing === 'down') return big;
+
+    var out, octx;
+    /* The bow points down in the source. Canvas y grows downward, so a positive
+     * rotation turns clockwise on screen and sends a down-pointing bow to the
+     * LEFT — the opposite of what the angle's sign suggests at a glance. */
+    if (facing === 'left' || facing === 'right') {
+      out = document.createElement('canvas');
+      out.width = big.height; out.height = big.width;
+      octx = out.getContext('2d');
+      octx.imageSmoothingEnabled = false;
+      if (facing === 'right') {
+        octx.translate(0, out.height);
+        octx.rotate(-Math.PI / 2);
+      } else {
+        octx.translate(out.width, 0);
+        octx.rotate(Math.PI / 2);
+      }
+      octx.drawImage(big, 0, 0);
+      return out;
+    }
+
+    var deg = DIAGONALS[facing];
+    if (deg === undefined) return big;
+    // a rectangle turned 45 degrees needs a square box of its half-perimeter
+    var side = Math.ceil((big.width + big.height) * Math.SQRT1_2);
+    out = document.createElement('canvas');
+    out.width = side; out.height = side;
+    octx = out.getContext('2d');
     octx.imageSmoothingEnabled = false;
-    octx.drawImage(unit, 0, 0, out.width, out.height);
+    octx.translate(side / 2, side / 2);
+    octx.rotate(deg * Math.PI / 180);
+    octx.drawImage(big, -big.width / 2, -big.height / 2);
     return out;
+  };
+
+  /* Screen angle that puts the bow in each diagonal, derived from the same
+   * clockwise-positive convention as the quarter turns above. */
+  var DIAGONALS = { nw: 135, ne: -135, sw: 45, se: -45 };
+
+  /* Which way a boat in this quadrant should point to have its back to the
+   * island, given [x, y] signs away from the centre. */
+  Camp.boatFacing = function (sx, sy) {
+    return (sy < 0 ? 'n' : 's') + (sx < 0 ? 'w' : 'e');
   };
   Camp.BOAT_W = BOAT_W; Camp.BOAT_H = BOAT_H;
 
@@ -609,6 +661,377 @@ window.Camp = window.Camp || {};
       px(ctx, 12, 24, 8, 3, C.out);
       px(ctx, 13, 25, 6, 2, '#c98f2b'); // hinge
     },
+  };
+
+  /* ---- small UI glyphs ----------------------------------------------------
+   * The interface used to lean on emoji (🐚 ⛵ 🌊 🥇), which the OS renders as
+   * smooth full-colour vectors — the one thing on screen that could never match
+   * the sprites. These replace them.
+   *
+   * Written as pixel maps because that stays far easier to read and nudge than
+   * a wall of fillRect calls. Drawn on a 10x10 grid: at scale 2 one art pixel is
+   * 2 CSS px, exactly a pixel on the boat sprites, so the icons land on the same
+   * grid as everything else. */
+  var UI_COLORS = {
+    o: '#16222f',                      // outline
+    p: '#ffd3de', P: '#e894ab',        // shell
+    b: '#5cc8ea', B: '#2f7fa8',        // water
+    w: C.wood,    W: C.woodD, c: C.canvas,
+    k: '#c3ccd4', K: '#6d7b87',        // metal
+    M: '#e9b64f', m: '#c98f2b',        // medal, overridable per rank
+  };
+
+  var UI_ART = {
+    shell: [
+      '...oooo...',
+      '..opppo...',
+      '.opPpPpo..',
+      'opPpPpPpo.',
+      'opPpPpPpo.',
+      'opPpPpPpo.',
+      '.opPpPpo..',
+      '..oppppo..',
+      '...oooo...',
+      '..........',
+    ],
+    wave: [
+      '..........',
+      '..........',
+      '...oo...oo',
+      '..obbo.obb',
+      '.obbbbobbb',
+      'obbBbbbbBb',
+      'oBBBBBBBBB',
+      '.ooooooooo',
+      '..........',
+      '..........',
+    ],
+    /* the mast is drawn in wood, not outline — an outline-coloured mast vanishes
+       against the panel and leaves the sail floating above the hull */
+    boat: [
+      '...oo.....',
+      '...owcco..',
+      '...owccco.',
+      '...owcccco',
+      '...owoooo.',
+      '...ow.....',
+      'oooooooooo',
+      'owwwwwwwwo',
+      '.oWWWWWWo.',
+      '..oooooo..',
+    ],
+    /* Sliders rather than a cog: a ten-pixel cog needs teeth and a bore, and at
+       that size the two collapse into each other and read as a hash symbol. */
+    settings: [
+      '..........',
+      'KKKKKKKKKK',
+      '.....kk...',
+      '.....kk...',
+      'KKKKKKKKKK',
+      '..kk......',
+      '..kk......',
+      'KKKKKKKKKK',
+      '.......kk.',
+      '.......kk.',
+    ],
+    play: [
+      '..........',
+      '..MM......',
+      '..MMM.....',
+      '..MMMM....',
+      '..MMMMM...',
+      '..MMMMM...',
+      '..MMMM....',
+      '..MMM.....',
+      '..MM......',
+      '..........',
+    ],
+    crown: [
+      '..........',
+      '.o.o.o.o..',
+      '.o.o.o.o..',
+      '.oMoMoMo..',
+      '.oMMMMMo..',
+      '.oMMMMMo..',
+      '.ooooooo..',
+      '..........',
+      '..........',
+      '..........',
+    ],
+    flag: [
+      '.o........',
+      '.occoocc..',
+      '.ooccooc..',
+      '.occoocc..',
+      '.ooccooc..',
+      '.o........',
+      '.o........',
+      '.o........',
+      '.oo.......',
+      '..........',
+    ],
+    /* A plain shaded disc. An earlier version had proper ribbon straps above the
+       medallion, but two stalks on a round body reads as an insect at 10px —
+       rank is carried by the tint anyway. */
+    medal: [
+      '..........',
+      '...oooo...',
+      '..oMMMMo..',
+      '.oMMMMMmo.',
+      '.oMMMmmmo.',
+      '.oMMmmmmo.',
+      '..ommmmo..',
+      '...oooo...',
+      '..........',
+      '..........',
+    ],
+  };
+
+  /* ---- bitmap typeface -----------------------------------------------------
+   * A browser cannot render vector text as pixel art — antialiased curves are
+   * exactly what pixel art is not — so display text is drawn from an actual
+   * 5x7 bitmap font. Two rows are reserved above every line for Czech
+   * diacritics, which are composed onto the plain letter rather than being
+   * drawn as separate glyphs. */
+  var GLYPH_W = 5, GLYPH_H = 7, GLYPH_GAP = 1, ACCENT_H = 2;
+
+  var FONT = {
+    'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+    'C': ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+    'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+    'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+    'G': ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
+    'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'I': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+    'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+    'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+    'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+    'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
+    'N': ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
+    'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+    'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+    'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+    'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+    'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+    'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+    'W': ['#...#', '#...#', '#...#', '#...#', '#.#.#', '##.##', '#...#'],
+    'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+    'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+    'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+    '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+    '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+    '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+    '5': ['#####', '#....', '#....', '####.', '....#', '#...#', '.###.'],
+    '6': ['.###.', '#...#', '#....', '####.', '#...#', '#...#', '.###.'],
+    '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    '9': ['.###.', '#...#', '#...#', '.####', '....#', '#...#', '.###.'],
+    '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
+    '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+    '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
+    ',': ['.....', '.....', '.....', '.....', '.....', '..#..', '.#...'],
+    '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+    "'": ['..#..', '..#..', '.....', '.....', '.....', '.....', '.....'],
+    ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+  };
+
+  var MARKS = {
+    acute: ['...#.', '..#..'],
+    caron: ['.#.#.', '..#..'],
+    ring:  ['..#..', '.#.#.'],
+  };
+
+  /* Czech letters, composed as a plain letter plus a mark. */
+  var ACCENTED = {
+    'Á': ['A', 'acute'], 'É': ['E', 'acute'], 'Í': ['I', 'acute'], 'Ó': ['O', 'acute'],
+    'Ú': ['U', 'acute'], 'Ý': ['Y', 'acute'], 'Ů': ['U', 'ring'],
+    'Č': ['C', 'caron'], 'Ď': ['D', 'caron'], 'Ě': ['E', 'caron'], 'Ň': ['N', 'caron'],
+    'Ř': ['R', 'caron'], 'Š': ['S', 'caron'], 'Ť': ['T', 'caron'], 'Ž': ['Z', 'caron'],
+  };
+
+  /* Unit-grid size of a string, before scaling. One pixel of margin all round
+     leaves room for the outline to sit in. */
+  function textGrid(text) {
+    return {
+      w: text.length * (GLYPH_W + GLYPH_GAP) - GLYPH_GAP + 2,
+      h: ACCENT_H + GLYPH_H + 2,
+    };
+  }
+  Camp.textGrid = textGrid;
+
+  /* Render a line of display text.
+   *
+   * opts.scale      pixels per art pixel (default 4)
+   * opts.top/bottom the two flat bands the letters are filled with
+   * opts.outline    colour of the 1px hard outline, or null for none
+   * opts.splitRow   glyph row where the fill changes band (default 3) */
+  Camp.renderText = function (text, opts) {
+    opts = opts || {};
+    var scale = opts.scale || 4;
+    var top = opts.top || '#ffe9b0';
+    var bottom = opts.bottom || '#c98f2b';
+    var outline = opts.outline === undefined ? '#050f1c' : opts.outline;
+    var splitRow = opts.splitRow === undefined ? 3 : opts.splitRow;
+
+    text = String(text).toUpperCase();
+    var grid = textGrid(text);
+
+    // paint the glyphs into a boolean mask first, so the outline can be derived
+    // from it rather than being drawn per glyph and doubling up between letters
+    var mask = [];
+    for (var y = 0; y < grid.h; y++) {
+      mask.push(new Array(grid.w));
+    }
+
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      var acc = ACCENTED[ch];
+      var rows = FONT[acc ? acc[0] : ch];
+      if (!rows) rows = FONT[' '];
+      var gx = 1 + i * (GLYPH_W + GLYPH_GAP);
+      for (var r = 0; r < GLYPH_H; r++) {
+        for (var c = 0; c < GLYPH_W; c++) {
+          if (rows[r].charAt(c) === '#') mask[1 + ACCENT_H + r][gx + c] = r < splitRow ? 1 : 2;
+        }
+      }
+      if (acc) {
+        var mk = MARKS[acc[1]];
+        for (var mr = 0; mr < ACCENT_H; mr++) {
+          for (var mc = 0; mc < GLYPH_W; mc++) {
+            if (mk[mr].charAt(mc) === '#') mask[1 + mr][gx + mc] = 1;
+          }
+        }
+      }
+    }
+
+    var out = document.createElement('canvas');
+    out.width = grid.w * scale;
+    out.height = grid.h * scale;
+    var ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    function on(x, y) {
+      return y >= 0 && y < grid.h && x >= 0 && x < grid.w && mask[y][x];
+    }
+
+    if (outline) {
+      ctx.fillStyle = outline;
+      for (var oy = 0; oy < grid.h; oy++) {
+        for (var ox = 0; ox < grid.w; ox++) {
+          if (on(ox, oy)) continue;
+          // any empty cell touching a lit one becomes outline, including corners,
+          // so letters stay legible against busy water
+          if (on(ox - 1, oy) || on(ox + 1, oy) || on(ox, oy - 1) || on(ox, oy + 1) ||
+              on(ox - 1, oy - 1) || on(ox + 1, oy - 1) ||
+              on(ox - 1, oy + 1) || on(ox + 1, oy + 1)) {
+            ctx.fillRect(ox * scale, oy * scale, scale, scale);
+          }
+        }
+      }
+    }
+
+    for (var fy = 0; fy < grid.h; fy++) {
+      for (var fx = 0; fx < grid.w; fx++) {
+        if (!mask[fy][fx]) continue;
+        ctx.fillStyle = mask[fy][fx] === 1 ? top : bottom;
+        ctx.fillRect(fx * scale, fy * scale, scale, scale);
+      }
+    }
+
+    out.setAttribute('role', 'img');
+    out.setAttribute('aria-label', text);
+    return out;
+  };
+
+  /* ---- cloud shadow -------------------------------------------------------
+   * A drifting shadow, built as pixel art rather than as a blurred blob: value
+   * noise on a coarse lattice, cut into two flat alpha steps. A third step is
+   * below what a projector can actually show, and a smooth gradient would be the
+   * one un-pixelated thing left on the board.
+   *
+   * Seeded rather than Math.random so a given cloud is always the same cloud —
+   * renderIsland runs again on every resize and language switch, and the sky
+   * should not reshuffle when someone drags the window. */
+  var cloudCache = {};
+
+  Camp.cloudShadow = function (seed) {
+    if (cloudCache[seed]) return cloudCache[seed];
+
+    var W = 128, H = 80;
+    var s = (seed * 2654435761) >>> 0;
+    function rnd() { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }
+    function ease(t) { return t * t * (3 - 2 * t); }
+
+    /* Two octaves, not one. A single coarse lattice produces two or three huge
+     * amorphous blobs that read as geometry rather than weather; adding a finer
+     * octave at lower amplitude breaks their edges up into something cloud-shaped. */
+    function octave(lx, ly) {
+      var lat = [];
+      for (var j = 0; j <= ly; j++) {
+        lat.push([]);
+        for (var i = 0; i <= lx; i++) lat[j].push(rnd());
+      }
+      return function (x, y) {
+        var fx = x / W * lx, fy = y / H * ly;
+        var x0 = Math.floor(fx), y0 = Math.floor(fy);
+        var tx = ease(fx - x0), ty = ease(fy - y0);
+        var a = lat[y0][x0] + (lat[y0][x0 + 1] - lat[y0][x0]) * tx;
+        var b = lat[y0 + 1][x0] + (lat[y0 + 1][x0 + 1] - lat[y0 + 1][x0]) * tx;
+        return a + (b - a) * ty;
+      };
+    }
+    var coarse = octave(8, 5), fine = octave(21, 13);
+
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d');
+
+    for (var y = 0; y < H; y++) {
+      for (var x = 0; x < W; x++) {
+        var v = (coarse(x, y) + 0.45 * fine(x, y)) / 1.45;
+        // feather the tile edges, or the cloud ends in a hard rectangle
+        v *= Math.min(1, Math.min(x, W - 1 - x) / 14) * Math.min(1, Math.min(y, H - 1 - y) / 10);
+        if (v < 0.47) continue;
+        // three steps, shallow: a cloud shadow should darken the water, not stain it
+        ctx.fillStyle = v < 0.55 ? 'rgba(3, 11, 22, 0.10)'
+                      : v < 0.62 ? 'rgba(3, 11, 22, 0.19)'
+                      : 'rgba(3, 11, 22, 0.27)';
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    cloudCache[seed] = cv.toDataURL();
+    return cloudCache[seed];
+  };
+
+  /* tint optionally replaces the [light, dark] medal pair, so one map serves
+     gold, silver, bronze and also-ran. */
+  Camp.renderUiIcon = function (name, scale, tint) {
+    scale = scale || 2;
+    var art = UI_ART[name];
+    var out = document.createElement('canvas');
+    out.width = 10 * scale;
+    out.height = 10 * scale;
+    if (!art) return out;
+    var ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    for (var y = 0; y < art.length; y++) {
+      for (var x = 0; x < art[y].length; x++) {
+        var ch = art[y].charAt(x);
+        var col = tint && ch === 'M' ? tint[0]
+                : tint && ch === 'm' ? tint[1]
+                : UI_COLORS[ch];
+        if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(x * scale, y * scale, scale, scale);
+      }
+    }
+    return out;
   };
 
   /* Icon canvas for a shop item. Team color only matters for a few accents. */

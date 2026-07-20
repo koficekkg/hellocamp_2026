@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HelloCamp 2026 — Escape from the Island</title>
+  <title>Hello Explorers Camp 2026 — Escape from the Island</title>
   <link rel="icon" type="image/svg+xml" href="resources/icons/favicon.svg">
   <link rel="stylesheet" href="resources/css/camp.css">
 </head>
@@ -13,10 +13,11 @@
   <div id="screen-island" class="screen ocean-bg">
     <div id="island-stage"></div>
     <div id="island-actions">
-      <button id="admin-open" class="gear-btn" title="Camp crew settings">⚙️</button>
+      <button id="award-open" class="gear-btn" title="Award shells"></button>
+      <button id="admin-open" class="gear-btn" title="Camp crew settings"></button>
       <button id="lang-toggle" class="gear-btn" title="Language">CZ</button>
-      <button id="intro-open" class="gear-btn" title="Intro">🎬</button>
-      <button id="podium-open" class="gear-btn end-night-btn">🏁 End the night</button>
+      <button id="intro-open" class="gear-btn" title="Intro"></button>
+      <button id="podium-open" class="gear-btn end-night-btn">End the night</button>
     </div>
   </div>
 
@@ -40,7 +41,7 @@
       <span id="shop-team-badge"></span>
       <span class="shop-title" id="shop-title">Shipyard</span>
       <span class="spacer"></span>
-      <span id="shop-shells-wrap">🐚 <span id="shop-shells">0</span></span>
+      <span id="shop-shells-wrap"><span id="shop-shells">0</span></span>
     </header>
     <div class="shop-body">
       <div id="shop-categories"></div>
@@ -92,11 +93,24 @@
     </div>
   </div>
 
+  <!-- ==================== Award shells (the nightly job) ================== -->
+  <div id="award-modal">
+    <div class="admin-panel award-panel">
+      <h2 id="award-title">Award shells</h2>
+      <div class="admin-cols" id="award-hint">Shells earned in camp games</div>
+      <div id="award-rows"></div>
+      <div class="admin-buttons">
+        <span class="spacer"></span>
+        <button id="award-done" class="admin-btn">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================ Admin modal ============================= -->
   <div id="admin-modal">
     <div class="admin-panel">
       <h2 id="admin-title">Camp crew settings</h2>
-      <div class="admin-cols" id="admin-cols">Color · Team name · 🐚 Shells · 🌊 Distance (m)</div>
+      <div class="admin-cols" id="admin-cols">Color · Team name · Shells · Distance (m)</div>
       <div id="admin-rows"></div>
       <div class="admin-buttons">
         <button id="admin-reset" class="admin-btn">Reset everything</button>
