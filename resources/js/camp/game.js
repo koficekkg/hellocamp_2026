@@ -45,11 +45,10 @@ window.Camp = window.Camp || {};
       clock: 0,
       endReason: null,       // 'crash' | 'kraken'
       bobT: Math.random() * 10,
-      kraken: null,          // {dist, t} once the fuel is gone
+      kraken: null,          // {dist, t, x, mode} — 'fuel' when the tank is dry, 'angry' after brushing tentacles
+      kSplash: null,         // {t, x, y} rings where the kraken smashed into an obstacle
       catchT: 0,             // kraken catch animation clock
-      movers: [],            // crossing jet-skis (lethal)
       dolphins: [],          // leaping dolphins (ambient, harmless)
-      nextMoverAt: 14 + Math.random() * 6,
       nextDolphinAt: 4 + Math.random() * 4,
       armor: stats.armor,    // hull plating charges left this run
       graceT: 0,             // invulnerability after plating absorbs a hit
@@ -76,7 +75,7 @@ window.Camp = window.Camp || {};
     // one guaranteed passable corridor that COMPOSES across waves: the lane
     // drifts as a bounded random walk, never further per wave than the boat
     // can steer between two waves (lateral reach ~= 0.85 * gap)
-    var laneW = 150 - 40 * ramp;
+    var laneW = 132 - 46 * ramp;
     var maxShift = gap * 0.4; // per-wave drift stays well under the boat's lateral reach (~0.85*gap)
     run.laneX = Math.max(30, Math.min(W - 30 - laneW,
       run.laneX + (Math.random() * 2 - 1) * maxShift));
@@ -85,7 +84,7 @@ window.Camp = window.Camp || {};
     if (run.laneLog.length > 300) run.laneLog.shift();
 
     var widthFactor = W / BASE_W;
-    var count = Math.max(1, Math.round(widthFactor * (1 + (Math.random() < 0.35 + 0.35 * ramp ? 1 : 0))));
+    var count = Math.max(1, Math.round(widthFactor * (1 + (Math.random() < 0.55 + 0.45 * ramp ? 1 : 0))));
     for (var i = 0; i < count; i++) {
       var def = pickObstacle();
       var sp = Camp.SPRITES[def.s];
@@ -116,6 +115,28 @@ window.Camp = window.Camp || {};
         }
       }
     }
+    // tentacle clusters spawn on top of the regular waves and are allowed to
+    // block the safe corridor — brushing one doesn't sink you, it wakes the
+    // kraken, so they're the one hazard the lane never protects you from
+    var tentacleTries = Math.max(1, Math.round(widthFactor));
+    for (var ti = 0; ti < tentacleTries; ti++) {
+      if (Math.random() > 0.28 + 0.22 * ramp) continue;
+      var tName = 'tentacles' + (1 + Math.floor(Math.random() * 3));
+      var tsp = Camp.SPRITES[tName];
+      var tw = tsp.r[2] * 1.5, th = tsp.r[3] * 1.5;
+      var tx = Math.random() * (W - tw);
+      var tyy = waveY + gap * (0.2 + Math.random() * 0.6);
+      var tClear = true;
+      for (var tk = Math.max(0, run.obstacles.length - 14); tk < run.obstacles.length; tk++) {
+        var to = run.obstacles[tk];
+        if (tx < to.x + to.w + 8 && tx + tw > to.x - 8 && tyy < to.y + to.h + 8 && tyy + th > to.y - 8) {
+          tClear = false;
+          break;
+        }
+      }
+      if (tClear) run.obstacles.push({ s: tName, x: tx, y: tyy, w: tw, h: th, hb: tsp.hb });
+    }
+
     run.nextWaveAt = waveY + gap * (0.75 + Math.random() * 0.5);
   }
 
@@ -143,17 +164,14 @@ window.Camp = window.Camp || {};
       (t.windSpawnMin + Math.random() * (t.windSpawnMax - t.windSpawnMin)) * (stats.windFreq || 1);
   }
 
-  function spawnMover() {
-    var fromLeft = Math.random() < 0.5;
-    var variant = Math.random() < 0.5 ? 1 : 2;
-    run.movers.push({
-      variant: variant,
-      x: fromLeft ? -80 : W + 80,
-      y: run.worldY + 260 + Math.random() * 320,
-      vx: (fromLeft ? 1 : -1) * (100 + Math.random() * 50),
-      animT: 0,
-    });
-    run.nextMoverAt = run.clock + 9 + Math.random() * 7;
+  /* brushing tentacles summons the kraken (or lets an active one lunge closer) */
+  function angerKraken() {
+    if (!run.kraken) {
+      run.kraken = { dist: 540, t: 0, x: run.x, mode: 'angry' };
+    } else {
+      run.kraken.dist = Math.max(140, run.kraken.dist - 150);
+      if (run.kraken.mode === 'angry') run.kraken.t = 0; // re-enrage the lunge
+    }
   }
 
   function spawnDolphin() {
@@ -203,6 +221,7 @@ window.Camp = window.Camp || {};
     if (run.goFlashT > 0) run.goFlashT -= dt;
     if (run.graceT > 0) run.graceT -= dt;
     if (run.shieldFlashT > 0) run.shieldFlashT -= dt;
+    if (run.kSplash && (run.kSplash.t += dt) > 0.9) run.kSplash = null;
 
     // fuel drains at a constant rate while the run is live
     run.fuel = Math.max(0, run.fuel - dt);
@@ -214,14 +233,42 @@ window.Camp = window.Camp || {};
 
     // the tank is dry: the kraken wakes up and starts closing in.
     // Wind charges slow it down — chain them to buy precious metres.
-    if (run.fuel <= 0 && !run.kraken) run.kraken = { dist: 540, t: 0, x: run.x };
+    if (run.fuel <= 0 && !run.kraken) run.kraken = { dist: 540, t: 0, x: run.x, mode: 'fuel' };
+    if (run.fuel <= 0 && run.kraken) run.kraken.mode = 'fuel'; // no escaping an empty tank
     if (run.kraken) {
       var k = run.kraken;
       k.t += dt;
       k.x += (run.x - k.x) * Math.min(1, dt * 1.1); // it hunts you, lazily
-      var close = (46 + Math.min(120, k.t * 14)) * (1 - 0.6 * run.charge);
+      var close;
+      if (k.mode === 'angry') {
+        // tentacle-brush chase: a hard lunge that loses steam over ~5 s, so a
+        // single hit is a close scare you can outrun — a second hit while it's
+        // still up is usually fatal, and wind charges shake it off fast
+        close = (120 - 22 * k.t) * (1 - 0.9 * run.charge);
+      } else {
+        close = (46 + Math.min(120, k.t * 14)) * (1 - 0.6 * run.charge);
+      }
       k.dist -= close * dt;
-      if (k.dist <= 78) {
+      // the kraken barrels through the field blind — steer so its path crosses
+      // something solid and it smashes into it and sinks back down
+      if (k.dist < 405) { // only once it has visibly emerged
+        var ky = run.worldY - k.dist;
+        for (var ko = run.obstacles.length - 1; ko >= 0; ko--) {
+          var ob = run.obstacles[ko];
+          if (ob.s.indexOf('tentacles') === 0) continue; // its own arms don't hurt it
+          if (ob.x < k.x + 80 && ob.x + ob.w > k.x - 80 && ob.y < ky + 60 && ob.y + ob.h > ky - 60) {
+            run.obstacles.splice(ko, 1);
+            run.kSplash = { t: 0, x: k.x, y: ky };
+            run.kraken = null;
+            break;
+          }
+        }
+      }
+      if (!run.kraken) {
+        // smashed into an obstacle this frame — no catch check
+      } else if (k.mode === 'angry' && k.dist > 560) {
+        run.kraken = null; // it gave up and sank back down
+      } else if (k.dist <= 78) {
         run.phase = 'caught';
         run.catchT = 0;
         return;
@@ -246,13 +293,10 @@ window.Camp = window.Camp || {};
     // spawning
     while (run.nextWaveAt < run.worldY + H + 200) spawnWave();
     if (run.clock >= run.nextWindAt) spawnWind();
-    if (!run.kraken && run.worldY > 2200 && run.clock >= run.nextMoverAt) spawnMover();
     if (run.clock >= run.nextDolphinAt) spawnDolphin();
 
-    // movers cross the field; dolphins are just passing through
-    run.movers.forEach(function (m) { m.x += m.vx * dt; m.animT += dt; });
+    // dolphins are just passing through
     run.dolphins.forEach(function (d) { d.x += d.vx * dt; d.animT += dt; });
-    run.movers = run.movers.filter(function (m) { return m.x > -160 && m.x < W + 160 && m.y > run.worldY - 300; });
     run.dolphins = run.dolphins.filter(function (d) { return d.x > -120 && d.x < W + 120 && d.y > run.worldY - 300; });
 
     // cull what's far behind
@@ -280,25 +324,16 @@ window.Camp = window.Camp || {};
         var hx = o.x + o.w * o.hb[0], hy = o.y + o.h * o.hb[1];
         var hw = o.w * o.hb[2], hh = o.h * o.hb[3];
         if (bx < hx + hw && bx + bw > hx && by < hy + hh && by + bh > hy) {
+          if (o.s.indexOf('tentacles') === 0) {
+            // tentacles don't wreck the hull — they wake the kraken
+            run.obstacles.splice(j, 1);
+            angerKraken();
+            run.graceT = 0.5;
+            break;
+          }
           if (run.armor > 0) {
             run.armor--;
             run.obstacles.splice(j, 1);
-            run.graceT = 0.9;
-            run.shieldFlashT = 0.6;
-            break;
-          }
-          run.phase = 'dying';
-          run.splash = { t: 0, x: run.x };
-          return;
-        }
-      }
-      for (var m = 0; m < run.movers.length; m++) {
-        var mv = run.movers[m];
-        var mx = mv.x - 16, my = mv.y - 13;
-        if (bx < mx + 32 && bx + bw > mx && by < my + 26 && by + bh > my) {
-          if (run.armor > 0) {
-            run.armor--;
-            run.movers.splice(m, 1);
             run.graceT = 0.9;
             run.shieldFlashT = 0.6;
             break;
@@ -323,7 +358,7 @@ window.Camp = window.Camp || {};
   // ---- rendering ----------------------------------------------------------
   function draw() {
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#ddf0f9';
+    ctx.fillStyle = '#9bd4f2';
     ctx.fillRect(0, 0, W, H);
 
     // scrolling water texture
@@ -334,9 +369,12 @@ window.Camp = window.Camp || {};
         for (var tx = 0; tx < W; tx += 256)
           ctx.drawImage(tile, tx, Math.round(ty));
     }
+    // the tile itself is quite pale — pull the whole sea toward blue
+    ctx.fillStyle = 'rgba(18, 110, 205, 0.18)';
+    ctx.fillRect(0, 0, W, H);
 
     // sparse procedural wave dashes so the open sea doesn't look empty
-    ctx.fillStyle = 'rgba(126, 190, 216, 0.5)';
+    ctx.fillStyle = 'rgba(182, 222, 244, 0.55)';
     var cell = 96;
     var row0 = Math.floor((run.worldY - PLAYER_Y) / cell) - 1;
     for (var row = row0; row < row0 + H / cell + 2; row++) {
@@ -403,24 +441,17 @@ window.Camp = window.Camp || {};
         Math.round(o.x), Math.round(y), Math.round(o.w), Math.round(o.h));
     });
 
-    // crossing jet-skis with their wakes
-    run.movers.forEach(function (m) {
-      var y = sy(m.y);
-      if (y < -90 || y > H + 90) return;
-      // wake dashes trailing behind
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      for (var wk = 1; wk <= 4; wk++) {
-        var tx = m.x - Math.sign(m.vx) * wk * 16;
-        ctx.fillRect(Math.round(tx - 5), Math.round(y + 6), 10, 2);
+    // burst of rings where the kraken smashed into an obstacle and sank
+    if (run.kSplash) {
+      var ks = run.kSplash, ksy = sy(ks.y);
+      for (var kj = 0; kj < 3; kj++) {
+        ctx.strokeStyle = 'rgba(255,255,255,' + Math.max(0, 0.85 - ks.t * 0.95).toFixed(2) + ')';
+        ctx.lineWidth = 5 - kj;
+        ctx.beginPath();
+        ctx.arc(ks.x, ksy, 14 + ks.t * 130 + kj * 18, 0, Math.PI * 2);
+        ctx.stroke();
       }
-      var frame = 'jetski' + m.variant + (Math.floor(m.animT * 8) % 2 ? 'a' : 'b');
-      var r = Camp.SPRITES[frame].r;
-      ctx.save();
-      ctx.translate(Math.round(m.x), Math.round(y));
-      if (m.vx > 0) ctx.scale(-1, 1);
-      ctx.drawImage(Camp.sheet, r[0], r[1], r[2], r[3], -r[2], -r[3], r[2] * 2, r[3] * 2);
-      ctx.restore();
-    });
+    }
 
     // the kraken rising behind the boat — screen-space so the chase is
     // visible the moment it starts (tentacle tips at the top edge first)
